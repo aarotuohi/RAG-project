@@ -1,0 +1,82 @@
+Microsoft Teams Meeting Transcript
+Meeting Title: Initial Discussion – Military Communication Helmet Project
+Date: February 20, 2026
+Time: 09:00–10:00
+
+Participants:
+John Andersson (Patria Oyj)
+Maria Lehtinen (Patria Oyj)
+Alex Carter (Tech Solutions Ltd)
+Priya Nair (Tech Solutions Ltd)
+
+--------------------------------------------------
+
+09:00 Alex Carter: Good morning everyone. Can you all hear me okay?
+
+09:00 John Andersson: Yes, loud and clear.
+
+09:00 Maria Lehtinen: All good on my side.
+
+09:00 Priya Nair: Same here.
+
+09:02 Alex Carter: Great. Thanks for joining. We would like to understand your needs and see how we can support.
+
+09:03 John Andersson: We are exploring a project around a military helmet with integrated communication.
+
+09:05 Maria Lehtinen: At a high level, we need a helmet system that includes built-in communication hardware, real-time voice communication between units, and high durability for field conditions.
+
+09:06 Priya Nair: Is this mainly for squad-level communication or broader use?
+
+09:07 Maria Lehtinen: Squad-level is the priority, but we want the system to be expandable later.
+
+09:10 Alex Carter: Are you envisioning a fully custom helmet or integration into an existing one?
+
+09:11 John Andersson: Preferably custom, but we are open to hybrid options if it speeds up development.
+
+09:12 Priya Nair: Any key constraints?
+
+09:12 Maria Lehtinen: Yes. It needs to be lightweight, durable, have good battery life, and provide clear audio in noisy environments.
+
+09:15 John Andersson: We also need the software layer built around it.
+
+09:16 Alex Carter: So a full platform, not just firmware?
+
+09:16 Maria Lehtinen: Correct. Including a communication control interface, secure encryption, and future capability for GPS and situational awareness.
+
+09:18 Priya Nair: Understood. So scalability is important.
+
+09:18 Maria Lehtinen: Yes.
+
+09:22 Priya Nair: Any specific security standards?
+
+09:23 John Andersson: We will share detailed requirements later, but assume high-level secure communication is mandatory.
+
+09:25 Alex Carter: What is your target timeline?
+
+09:26 John Andersson: Project start on March 1, 2026, and completion by January 1, 2027.
+
+09:27 Priya Nair: That gives roughly 10 months. We would suggest phased delivery.
+
+09:28 Maria Lehtinen: Yes. Concept and design, prototype development, testing, and final delivery.
+
+09:30 Alex Carter: Do you have a budget range at this stage?
+
+09:31 John Andersson: Not fixed yet. We are open depending on the proposal.
+
+09:35 Priya Nair: Let me summarize. You need a military helmet with integrated communication hardware, real-time voice communication, a secure system, and a custom software platform with future expansion capability.
+
+09:36 Maria Lehtinen: That is correct.
+
+09:40 Alex Carter: Next step from our side is to prepare a technical proposal, architecture overview, and project plan aligned with your timeline.
+
+09:41 John Andersson: When can we expect that?
+
+09:41 Alex Carter: Within 7 to 10 business days.
+
+09:50 Maria Lehtinen: We look forward to reviewing it.
+
+09:51 Priya Nair: Thank you, this is a very interesting project.
+
+09:52 Alex Carter: Thank you everyone for your time.
+
+09:52 John Andersson: Thank you.

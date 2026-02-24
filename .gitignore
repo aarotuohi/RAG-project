@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv/
+venv/
+env/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+
+# App data (generated at runtime)
+# NOTE: Do NOT commit user documents or generated offers
+*.docx
+*.pdf
+*.xlsx
+!templates/
+
+# ChromaDB / vector store
+# (stored in %APPDATA%\AISALES — not in repo)
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# PyInstaller
+dist/
+build/
+*.spec
+
+# Logs
+*.log
