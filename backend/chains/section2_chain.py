@@ -82,7 +82,7 @@ def _retrieve_similar_projects(description: str, k: int = 5) -> str:
         return "No historical data available."
 
 
-def generate_section2(project: ProjectData) -> dict:
+def generate_section2(project: ProjectData, language: str = "en") -> dict:
     """
     Returns:
       {
@@ -92,6 +92,7 @@ def generate_section2(project: ProjectData) -> dict:
         'payment_type': str,
       }
     """
+    lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     llm = get_llm()
 
     description_query = f"{project.project_name} {project.goals} {project.required_expertise}"
@@ -103,7 +104,7 @@ def generate_section2(project: ProjectData) -> dict:
         goals=project.goals or "Not specified",
         payment_type=project.payment_type or "hourly",
         material_deliverables=project.material_deliverables or "Not specified",
-    )
+    ) + f"\n\n{lang_note}"
     description_text = llm.invoke(desc_prompt).strip()
 
     # --- Step 2: Generate structured cost estimate ---

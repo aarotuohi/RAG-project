@@ -1,9 +1,14 @@
 import { useState, useEffect } from 'react'
+import { t, type Lang } from '../i18n'
 
 interface OutputFile {
   name: string
   path: string
   size: number
+}
+
+interface Props {
+  lang: Lang
 }
 
 function formatSize(bytes: number): string {
@@ -12,7 +17,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-export default function OutputsTab() {
+export default function OutputsTab({ lang }: Props) {
   const [files, setFiles] = useState<OutputFile[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -37,28 +42,28 @@ export default function OutputsTab() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Generated Offers</h1>
-        <button className="btn btn-secondary" onClick={fetchOutputs}>🔄 Refresh</button>
+        <h1 style={{ fontSize: 22, fontWeight: 700 }}>{t('generated_offers', lang)}</h1>
+        <button className="btn btn-secondary" onClick={fetchOutputs}>{t('refresh_btn', lang)}</button>
       </div>
 
-      {loading && <div style={{ color: '#6b7280', fontSize: 14 }}>Loading…</div>}
+      {loading && <div style={{ color: '#6b7280', fontSize: 14 }}>{t('loading', lang)}</div>}
 
       {!loading && files.length === 0 && (
         <div className="alert alert-info">
-          No offers generated yet. Go to the <strong>New Offer</strong> tab to create one.
+          {t('no_offers', lang)} <strong>{t('nav_new_offer', lang)}</strong> {t('no_offers2', lang)}
         </div>
       )}
 
       {docxFiles.length > 0 && (
         <div className="card">
-          <h2>Word Documents (.docx)</h2>
+          <h2>{t('word_docs', lang)}</h2>
           {docxFiles.map(f => (
             <div key={f.path} className="output-item">
               <span className="output-icon">📝</span>
               <span className="output-name">{f.name}</span>
               <span className="output-size">{formatSize(f.size)}</span>
               <button className="btn btn-secondary" style={{ padding: '6px 14px' }} onClick={() => download(f.path)}>
-                ⬇️ Download
+                {t('download_btn', lang)}
               </button>
             </div>
           ))}
@@ -67,14 +72,14 @@ export default function OutputsTab() {
 
       {pdfFiles.length > 0 && (
         <div className="card">
-          <h2>PDF Documents</h2>
+          <h2>{t('pdf_docs', lang)}</h2>
           {pdfFiles.map(f => (
             <div key={f.path} className="output-item">
               <span className="output-icon">📄</span>
               <span className="output-name">{f.name}</span>
               <span className="output-size">{formatSize(f.size)}</span>
               <button className="btn btn-primary" style={{ padding: '6px 14px' }} onClick={() => download(f.path)}>
-                ⬇️ Download
+                {t('download_btn', lang)}
               </button>
             </div>
           ))}

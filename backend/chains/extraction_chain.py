@@ -41,6 +41,11 @@ class ProjectData:
     required_expertise: str = ""
     other_notes: str = ""
 
+    # Salesperson contact details (populated from contacts file, not transcript extraction)
+    salesperson_phone: str = ""
+    salesperson_email: str = ""
+    salesperson_title: str = ""
+
 
 _EXTRACTION_PROMPT = PromptTemplate.from_template(
     """You are an assistant that extracts structured information from sales meeting transcripts.

@@ -25,11 +25,18 @@ class CostStep:
     total: float = field(init=False)
 
     def __post_init__(self):
-        # Always compute total programmatically — never trust the Excel cell value
+        """Calculate the total cost from rate × hours × persons.
+        Always computed here — never reads the pre-calculated value from the Excel cell
+        to avoid stale or formula-driven discrepancies.
+        """
         self.total = round(self.hourly_rate * self.hours * self.persons, 2)
 
 
 def _infer_category(text: str) -> str:
+    """Guess the work category for a step by checking if any known WORK_CATEGORIES
+    name appears in the step's name/description text.
+    Falls back to 'Services' if no match is found.
+    """
     text_lower = text.lower()
     for cat in WORK_CATEGORIES:
         if cat.lower() in text_lower:
@@ -38,6 +45,9 @@ def _infer_category(text: str) -> str:
 
 
 def _safe_float(val) -> float:
+    """Convert a cell value to float, handling European decimal commas,
+    whitespace, and currency symbols (€). Returns 0.0 if conversion fails.
+    """
     try:
         return float(str(val).replace(",", ".").replace(" ", "").replace("€", ""))
     except (ValueError, TypeError):
@@ -45,6 +55,10 @@ def _safe_float(val) -> float:
 
 
 def _safe_int(val) -> int:
+    """Convert a cell value to a positive integer for the persons count.
+    Handles decimal strings (e.g. '2.0'). Returns 1 if conversion fails
+    or the value is less than 1.
+    """
     try:
         return max(1, int(float(str(val).replace(",", "."))))
     except (ValueError, TypeError):
@@ -112,11 +126,15 @@ def parse_excel(file_path: Path) -> dict[str, list[CostStep]]:
 
 
 def grand_total(steps: list[CostStep]) -> float:
+    """Sum the total cost of all steps and round to 2 decimal places."""
     return round(sum(s.total for s in steps), 2)
 
 
 def steps_to_text(steps: list[CostStep], project_name: str = "") -> str:
-    """Convert steps to a readable text block for embedding into ChromaDB."""
+    """Serialize a list of CostSteps into a plain-text block suitable for
+    embedding into ChromaDB. Each line contains step ID, name, category,
+    rate, hours, persons and total cost. A grand total line is appended at the end.
+    """
     lines = [f"Project: {project_name}"] if project_name else []
     for s in steps:
         lines.append(

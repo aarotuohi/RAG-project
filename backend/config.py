@@ -16,6 +16,8 @@ CONTACTS_DIR     = DOCUMENTS_DIR / "contacts"
 BOILERPLATE_DIR  = DOCUMENTS_DIR / "boilerplate"
 TRANSCRIPTS_DIR  = DOCUMENTS_DIR / "transcripts"
 
+SETTINGS_FILE = BASE_DIR / "settings.json"
+
 # Create all directories on import
 for _d in [
     DOCUMENTS_DIR, VECTORSTORE_DIR, OUTPUTS_DIR,

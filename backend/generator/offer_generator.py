@@ -38,6 +38,7 @@ def generate_offer(
     project: ProjectData,
     enable_web_search: bool = True,
     export_pdf: bool = True,
+    language: str = "en",
 ) -> Iterator[dict]:
     """
     Generator that yields progress dicts and finally yields result paths.
@@ -51,22 +52,22 @@ def generate_offer(
 
     try:
         yield {"status": "progress", "section": "thank_you", "message": "Generating thank-you paragraph…"}
-        sections["thankyou"] = generate_thankyou(project)
+        sections["thankyou"] = generate_thankyou(project, language=language)
 
         yield {"status": "progress", "section": "section1", "message": "Generating Section 1: Background and Goals…"}
-        sections["section1"] = generate_section1(project, enable_web_search=enable_web_search)
+        sections["section1"] = generate_section1(project, enable_web_search=enable_web_search, language=language)
 
         yield {"status": "progress", "section": "section2", "message": "Generating Section 2: Cost Estimation…"}
-        sections["section2"] = generate_section2(project)
+        sections["section2"] = generate_section2(project, language=language)
 
         yield {"status": "progress", "section": "section3", "message": "Generating Section 3: Timetable…"}
-        sections["section3"] = generate_timetable(project)
+        sections["section3"] = generate_timetable(project, language=language)
 
         yield {"status": "progress", "section": "section4", "message": "Generating Section 4: Restrictions…"}
-        sections["section4"] = generate_restrictions(project)
+        sections["section4"] = generate_restrictions(project, language=language)
 
         yield {"status": "progress", "section": "section5", "message": "Generating Section 5: Material Transformation…"}
-        sections["section5"] = generate_material(project)
+        sections["section5"] = generate_material(project, language=language)
 
         yield {"status": "progress", "section": "section6", "message": "Loading Section 6: Documentation (boilerplate)…"}
         sections["section6"] = read_boilerplate("documentation")
@@ -75,14 +76,14 @@ def generate_offer(
         sections["section7"] = read_boilerplate("quality")
 
         yield {"status": "progress", "section": "section8", "message": "Generating Section 8: Project Team (CV matching)…"}
-        sections["section8"] = generate_section8(project)
+        sections["section8"] = generate_section8(project, language=language)
 
         yield {"status": "progress", "section": "section9", "message": "Loading Section 9: Delivery Terms (boilerplate)…"}
         sections["section9"] = read_boilerplate("delivery")
 
         yield {"status": "progress", "section": "section10", "message": "Generating Section 10: Contact Information…"}
-        sections["section10_text"] = generate_contact_text(project)
         salesperson_contact = _load_salesperson(project.salesperson_name)
+        sections["section10_text"] = generate_contact_text(project, language=language, salesperson_contact=salesperson_contact)
 
         yield {"status": "progress", "section": "docx", "message": "Assembling DOCX document…"}
         docx_path = build_offer_document(project, sections, salesperson_contact)

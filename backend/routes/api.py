@@ -1,37 +1,70 @@
 """
-API routes — /api/status, /api/ingest, /api/extract-path, /api/generate, /api/download
+API routes — /api/status, /api/open-file-dialog, /api/upload-transcript,
+              /api/extract-path, /api/generate, /api/download, /api/outputs
 """
 from __future__ import annotations
-import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File as FastAPIFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import json
 
 from backend.chains.extraction_chain import extract_from_file, ProjectData, project_data_to_dict
 from backend.generator.offer_generator import generate_offer
-from backend.vectorstore.chroma_client import delete_collection, collection_count, get_chroma_client
-from backend.ingestion.document_loader import index_directory, index_file
-from backend.ingestion.cv_parser import parse_cv_file
-from backend.ingestion.excel_parser import parse_excel, steps_to_text
-from backend.ollama_client import recommend_model, list_local_models, pull_model_if_missing, is_ollama_running, get_embeddings
+from backend.vectorstore.chroma_client import collection_count
+from backend.ollama_client import recommend_model, list_local_models, is_ollama_running
 from backend.config import (
-    COST_HISTORY_DIR, CV_DIR, CONTACTS_DIR, BOILERPLATE_DIR,
+    TRANSCRIPTS_DIR,
     CHROMA_COLLECTION_COST, CHROMA_COLLECTION_CV, CHROMA_COLLECTION_BOILER, CHROMA_COLLECTION_CONTACTS,
-    OUTPUTS_DIR,
+    OUTPUTS_DIR, SETTINGS_FILE,
 )
+
+
+def _load_settings() -> dict:
+    try:
+        return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _get_transcript_dir() -> Path:
+    """Return the active transcript folder (custom or default)."""
+    custom = _load_settings().get("transcript_folder", "")
+    if custom:
+        p = Path(custom)
+        if p.is_dir():
+            return p
+    return TRANSCRIPTS_DIR
 
 router = APIRouter(prefix="/api")
 
-# Maps category name → folder path (used in multiple endpoints)
-FOLDER_MAP = {
-    "cost_history": COST_HISTORY_DIR,
-    "cvs":          CV_DIR,
-    "contacts":     CONTACTS_DIR,
-    "boilerplate":  BOILERPLATE_DIR,
-}
+
+
+# ── Native file dialog ───────────────────────────────────────────────────────
+
+@router.get("/open-file-dialog")
+def open_file_dialog():
+    """Open a native OS file picker and return the chosen path."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", True)
+        path = filedialog.askopenfilename(
+            title="Select meeting transcript",
+            filetypes=[
+                ("Transcript files", "*.txt *.docx *.pdf *.md"),
+                ("All files", "*.*"),
+            ],
+        )
+        root.destroy()
+        if path:
+            return {"path": path}
+        return {"path": ""}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Status & Setup ────────────────────────────────────────────────────────────
@@ -51,106 +84,21 @@ def get_status():
     }
 
 
-class PullModelRequest(BaseModel):
-    model_name: str
-
-
-@router.post("/setup/pull-model")
-def pull_model(req: PullModelRequest):
-    try:
-        pull_model_if_missing(req.model_name)
-        return {"ok": True, "model": req.model_name}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ── Ingestion ─────────────────────────────────────────────────────────────────
-
-@router.post("/ingest/cost-history")
-def ingest_cost_history():
-    """Index all Excel files from the cost_history folder into ChromaDB."""
-    delete_collection(CHROMA_COLLECTION_COST)
-    results = {}
-    for f in COST_HISTORY_DIR.iterdir():
-        if f.suffix.lower() in (".xlsx", ".xls"):
-            try:
-                col = get_chroma_client().get_or_create_collection(CHROMA_COLLECTION_COST)
-                for sheet_name, steps in parse_excel(f).items():
-                    text = steps_to_text(steps, project_name=f"{f.stem} / {sheet_name}")
-                    col.add(
-                        documents=[text],
-                        embeddings=[get_embeddings().embed_query(text)],
-                        metadatas=[{"source": f.name, "sheet": sheet_name}],
-                        ids=[f"{f.stem}_{sheet_name}"],
-                    )
-                    results[f.name] = results.get(f.name, 0) + 1
-            except Exception as e:
-                results[f.name] = f"error: {e}"
-        else:
-            results[f.name] = index_file(f, CHROMA_COLLECTION_COST)
-    return {"indexed": results}
-
-
-@router.post("/ingest/cvs")
-def ingest_cvs():
-    """Index the CV file from the cvs folder into ChromaDB."""
-    delete_collection(CHROMA_COLLECTION_CV)
-    results = {}
-    for f in CV_DIR.iterdir():
-        if f.suffix.lower() in (".docx", ".pdf"):
-            try:
-                col = get_chroma_client().get_or_create_collection(CHROMA_COLLECTION_CV)
-                emb_fn = get_embeddings()
-                experts = parse_cv_file(f)
-                for expert in experts:
-                    col.add(
-                        documents=[expert.raw_text],
-                        embeddings=[emb_fn.embed_query(expert.raw_text[:1000])],
-                        metadatas={"person_name": expert.person_name, "skills": ", ".join(expert.skills), "domains": ", ".join(expert.domains), "source": f.name},
-                        ids=[f"{f.stem}_{expert.person_name.replace(' ', '_')}"],
-                    )
-                results[f.name] = len(experts)
-            except Exception as e:
-                results[f.name] = f"error: {e}"
-    return {"indexed": results}
-
-
-@router.post("/ingest/boilerplate")
-def ingest_boilerplate():
-    """Index all boilerplate text files into ChromaDB."""
-    delete_collection(CHROMA_COLLECTION_BOILER)
-    return {"indexed": index_directory(BOILERPLATE_DIR, CHROMA_COLLECTION_BOILER)}
-
-
-class RegisterPathRequest(BaseModel):
-    category: str
-    file_path: str
-
-
-@router.post("/ingest/register-path")
-def register_path(req: RegisterPathRequest):
-    """Copy a local file (by absolute path) into a category folder and re-index it."""
-    src = Path(req.file_path)
-    if not src.exists() or not src.is_file():
-        raise HTTPException(status_code=400, detail=f"File not found: {req.file_path}")
-
-    folder = FOLDER_MAP.get(req.category)
-    if not folder:
-        raise HTTPException(status_code=400, detail=f"Unknown category: {req.category}")
-
-    dest = folder / src.name
-    shutil.copy2(src, dest)
-
-    if req.category == "cvs":
-        return ingest_cvs()
-    elif req.category == "cost_history":
-        return ingest_cost_history()
-    elif req.category == "boilerplate":
-        return {"indexed": {src.name: index_file(dest, CHROMA_COLLECTION_BOILER)}}
-    return {"saved": str(dest)}
-
-
 # ── Transcript Extraction ─────────────────────────────────────────────────────
+@router.post("/upload-transcript")
+async def upload_transcript(file: UploadFile = FastAPIFile(...)):
+    """Save an uploaded transcript file to TRANSCRIPTS_DIR and return its path."""
+    dest = _get_transcript_dir() / (file.filename or "transcript.txt")
+    # If a file with the same name already exists, don't overwrite
+    stem = dest.stem
+    suffix = dest.suffix
+    counter = 1
+    while dest.exists():
+        dest = dest.parent / f"{stem}_{counter}{suffix}"
+        counter += 1
+    content = await file.read()
+    dest.write_bytes(content)
+    return {"path": str(dest), "name": dest.name}
 
 class ExtractPathRequest(BaseModel):
     file_path: str
@@ -174,6 +122,7 @@ class GenerateRequest(BaseModel):
     project: dict
     enable_web_search: bool = True
     export_pdf: bool = True
+    document_language: str = "en"  # "en" | "fi"
 
 
 @router.post("/generate")
@@ -182,7 +131,7 @@ def generate(req: GenerateRequest):
     project = ProjectData(**{k: v for k, v in req.project.items() if k in ProjectData.__dataclass_fields__})
 
     def event_stream():
-        for event in generate_offer(project, req.enable_web_search, req.export_pdf):
+        for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.document_language):
             yield json.dumps(event) + "\n"
 
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
@@ -208,19 +157,3 @@ def list_outputs():
     """List all generated offer files."""
     files = [{"name": f.name, "path": str(f), "size": f.stat().st_size} for f in OUTPUTS_DIR.iterdir() if f.is_file()]
     return sorted(files, key=lambda x: x["name"], reverse=True)
-
-
-@router.get("/documents")
-def list_documents():
-    """List files currently registered in each document category folder."""
-    def _ls(folder: Path) -> list[str]:
-        try:
-            return [f.name for f in folder.iterdir() if f.is_file()]
-        except Exception:
-            return []
-    return {
-        "cost_history": _ls(COST_HISTORY_DIR),
-        "cvs":          _ls(CV_DIR),
-        "contacts":     _ls(CONTACTS_DIR),
-        "boilerplate":  _ls(BOILERPLATE_DIR),
-    }

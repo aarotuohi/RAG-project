@@ -77,58 +77,26 @@ def _split_by_separators(text: str) -> list[str]:
     return [s.strip() for s in segments if s.strip()]
 
 
-def parse_docx(path: Path) -> list[ExpertCV]:
-    from docx import Document
-    doc = Document(str(path))
-    full_text = "\n".join(p.text for p in doc.paragraphs)
+def parse_docling(path: Path) -> list[ExpertCV]:
+    """
+    Parse a CV file (.docx or .pdf) using Docling's DocumentConverter.
+    Docling preserves layout, headings, and table structure far better than
+    raw python-docx / pdfplumber extraction, giving the heading-based splitter
+    cleaner input to work with.
+    """
+    from docling.document_converter import DocumentConverter
 
-    # Try heading-based split first
+    converter = DocumentConverter()
+    result = converter.convert(str(path))
+    # Export to markdown — headings become "## Name" markers the splitter already handles
+    full_text = result.document.export_to_markdown()
+
+    # Try heading-based split first; fall back to separator-based
     segments = _split_by_headings(full_text)
     if len(segments) == 1:
         segments = _split_by_separators(full_text)
 
-    experts = []
-    for seg in segments:
-        if len(seg) < 100:
-            continue
-        name = _extract_name_from_segment(seg)
-        experts.append(ExpertCV(
-            person_name=name,
-            raw_text=seg,
-            skills=_infer_skills(seg),
-            domains=_infer_domains(seg),
-        ))
-    return experts
-
-
-def parse_pdf(path: Path) -> list[ExpertCV]:
-    import pdfplumber
-    pages_text: list[str] = []
-    with pdfplumber.open(str(path)) as pdf:
-        for page in pdf.pages:
-            pages_text.append(page.extract_text() or "")
-
-    # Try page-break segmentation first (most reliable for PDF CVs)
-    # Group pages into segments by detecting name heading on first line of each page
-    segments: list[str] = []
-    current: list[str] = []
-    for page_text in pages_text:
-        first_line = page_text.strip().splitlines()[0] if page_text.strip() else ""
-        is_new_cv = bool(_CV_HEADING_PATTERN.match(first_line))
-        if is_new_cv and current:
-            segments.append("\n".join(current))
-            current = [page_text]
-        else:
-            current.append(page_text)
-    if current:
-        segments.append("\n".join(current))
-
-    if len(segments) <= 1:
-        # Fallback: treat the whole text as heading-split
-        full_text = "\n".join(pages_text)
-        segments = _split_by_headings(full_text)
-
-    experts = []
+    experts: list[ExpertCV] = []
     for seg in segments:
         if len(seg) < 100:
             continue
@@ -144,9 +112,7 @@ def parse_pdf(path: Path) -> list[ExpertCV]:
 
 def parse_cv_file(path: Path) -> list[ExpertCV]:
     suffix = path.suffix.lower()
-    if suffix == ".docx":
-        return parse_docx(path)
-    elif suffix == ".pdf":
-        return parse_pdf(path)
+    if suffix in (".docx", ".pdf"):
+        return parse_docling(path)
     else:
         raise ValueError(f"Unsupported CV file format: {suffix}")
