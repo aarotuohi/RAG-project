@@ -18,40 +18,46 @@ from backend.ingestion.excel_parser import CostStep
 
 
 _ESTIMATION_PROMPT = PromptTemplate.from_template(
-    """You are a project estimation expert. Based on the new project description and 
-historical project data below, create a detailed cost estimate.
+    """You are a project cost estimation expert. Your job is to produce an accurate \
+step-by-step cost estimate for a new project by learning from real historical project data.
 
-NEW PROJECT:
+════════════════════════════════════════
+NEW PROJECT
+════════════════════════════════════════
 Name: {project_name}
-Description: {description}
 Goals: {goals}
+Constraints: {description}
 Required expertise: {required_expertise}
 Payment type: {payment_type}
 
-SIMILAR HISTORICAL PROJECTS (for reference — use these to calibrate hours):
+════════════════════════════════════════
+HISTORICAL PROJECTS — REAL DATA FROM PREVIOUS CALCULATIONS
+════════════════════════════════════════
 {historical_data}
+
+════════════════════════════════════════
+INSTRUCTIONS
+════════════════════════════════════════
+1. Study the historical projects above carefully.
+2. Identify which historical steps are most similar to what the new project needs.
+3. Use the EXACT hourly rates (Rate: X€/h) from the historical data for matching work types — do NOT invent rates.
+4. Scale hours up or down based on project complexity compared to historical examples.
+5. Add any steps the new project needs that don't appear in history, using nearby category rates as reference.
 
 Work categories available: {categories}
 
-Create a step-by-step cost estimate. Return ONLY a JSON array of objects with this structure:
+Return ONLY a JSON array — no explanation, no markdown, no totals row:
 [
   {{
     "step_id": "STEP 1",
-    "name": "step description",
-    "category": "one of the work categories",
-    "hourly_rate": <number>,
-    "hours": <number>,
+    "name": "step description in the same language as the project name",
+    "category": "one of the work categories above",
+    "hourly_rate": <exact number from historical data>,
+    "hours": <estimated hours per person>,
     "persons": <integer>
   }},
   ...
-]
-
-Rules:
-- hourly_rate should be realistic (typically 85-150 €/h based on category)
-- hours and persons must be positive numbers
-- Include at least one step per relevant work category
-- Do NOT include a totals row — only individual steps
-- Return ONLY the JSON array, no explanation."""
+]"""
 )
 
 _DESCRIPTION_PROMPT = PromptTemplate.from_template(
@@ -73,11 +79,36 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
-def _retrieve_similar_projects(description: str, k: int = 5) -> str:
+def _retrieve_similar_projects(description: str, k: int = 12) -> str:
+    """
+    Retrieve the most relevant historical cost chunks from ChromaDB.
+    Fetches k chunks but deduplicates by source file so the LLM sees
+    data from multiple different projects rather than the same file repeated.
+    """
     try:
         collection = get_collection(CHROMA_COLLECTION_COST)
         docs = collection.similarity_search(description, k=k)
-        return "\n\n".join(d.page_content for d in docs)
+
+        # Deduplicate: keep only the best (first) chunk per source file
+        seen_sources: set[str] = set()
+        unique_docs = []
+        for d in docs:
+            src = d.metadata.get("source", "")
+            if src not in seen_sources:
+                seen_sources.add(src)
+                unique_docs.append(d)
+
+        if not unique_docs:
+            return "No historical data available."
+
+        sections = []
+        for i, d in enumerate(unique_docs, 1):
+            src_name = d.metadata.get("source", "unknown")
+            # Show just the filename, not the full path
+            src_name = src_name.replace("\\", "/").split("/")[-1]
+            sections.append(f"--- Historical project {i}: {src_name} ---\n{d.page_content}")
+
+        return "\n\n".join(sections)
     except Exception:
         return "No historical data available."
 
@@ -114,7 +145,7 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
         goals=project.goals or "Not specified",
         required_expertise=project.required_expertise or "Not specified",
         payment_type=project.payment_type or "hourly",
-        historical_data=historical_data[:4000],
+        historical_data=historical_data[:8000],
         categories=", ".join(WORK_CATEGORIES),
     )
     raw = llm.invoke(est_prompt)

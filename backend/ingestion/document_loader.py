@@ -74,7 +74,32 @@ def _load_with_docling(path: Path) -> list[Document]:
 
 
 def _load_excel_as_text(path: Path) -> list[Document]:
+    """
+    Load an Excel file as Documents for ChromaDB indexing.
+    For cost-estimation files (laskentapohja format) the structured parser
+    produces cleaner, more searchable text.  Any sheet with no recognised
+    step rows falls back to a plain pandas dump.
+    """
     import pandas as pd
+    from backend.ingestion.excel_parser import parse_excel, parse_excel_metadata, steps_to_text
+
+    # Try structured cost-estimation parse first
+    try:
+        sheet_steps = parse_excel(path)
+        if sheet_steps:
+            metadata = parse_excel_metadata(path)
+            docs = []
+            for sheet, steps in sheet_steps.items():
+                text = steps_to_text(steps, metadata=metadata)
+                docs.append(Document(
+                    page_content=text,
+                    metadata={"source": str(path), "sheet": sheet, "type": "xlsx", "structured": True},
+                ))
+            return docs
+    except Exception:
+        pass  # fall through to plain text
+
+    # Fallback: plain pandas dump
     docs = []
     xl = pd.ExcelFile(str(path))
     for sheet in xl.sheet_names:

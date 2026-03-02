@@ -10,16 +10,11 @@ from backend.config import BOILERPLATE_DIR, TEMPLATES_DIR
 
 PLACEHOLDERS = {
     "documentation.txt": """\
-6. Documentation
+6. Dokumentaatio
 
-Reports and documentation for this project will be delivered in Finnish and English.
-The project includes the following documentation deliverables:
-- Technical specification
-- Test reports
-- User manuals (where applicable)
-- Final project report
-
-All documentation will be provided in electronic format (PDF and/or Word).
+Visualisointiin sekä raportointiin käytettävät ohjelmistot määrittelee Toimittaja. Kirjallisen raportoinnin ja dokumentoinnin
+tason ja laajuuden määrittelee Toimittaja. Kirjeenvaihtoon ja muuhun dokumentaatioon käytetään MS Office - ohjelmistoja.
+Toimittajan projektipäälikkö vastaa oman projektiosuutensa projektidokumennttien toteutuksesta.
 """,
     "quality_assurance.txt": """\
 7. Quality Assurance

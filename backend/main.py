@@ -11,11 +11,15 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.routes.api import router
 from backend.ollama_client import ensure_ollama_running, recommend_model
+from backend.ingestion.ingestion_queue import start_worker
 import backend.config as cfg
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Start background ingestion worker
+    start_worker()
+
     # Start Ollama if it is not already running
     try:
         ensure_ollama_running()

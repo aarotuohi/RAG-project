@@ -14,6 +14,7 @@ from backend.chains.extraction_chain import extract_from_file, ProjectData, proj
 from backend.generator.offer_generator import generate_offer
 from backend.vectorstore.chroma_client import collection_count
 from backend.ollama_client import recommend_model, list_local_models, is_ollama_running
+from backend.ingestion.ingestion_queue import submit_job, get_job, list_jobs, queue_size
 from backend.config import (
     TRANSCRIPTS_DIR,
     CHROMA_COLLECTION_COST, CHROMA_COLLECTION_CV, CHROMA_COLLECTION_BOILER, CHROMA_COLLECTION_CONTACTS,
@@ -157,3 +158,101 @@ def list_outputs():
     """List all generated offer files."""
     files = [{"name": f.name, "path": str(f), "size": f.stat().st_size} for f in OUTPUTS_DIR.iterdir() if f.is_file()]
     return sorted(files, key=lambda x: x["name"], reverse=True)
+
+
+# From her on it is the bottleneck solution
+
+
+# ── Background Ingestion ──────────────────────────────────────────────────────
+
+_INGEST_COLLECTION_MAP = {
+    "cost_history": CHROMA_COLLECTION_COST,
+    "cv":           CHROMA_COLLECTION_CV,
+    "boilerplate":  CHROMA_COLLECTION_BOILER,
+    "contacts":     CHROMA_COLLECTION_CONTACTS,
+}
+
+_INGEST_DIR_MAP = {
+    "cost_history": None,   # resolved dynamically from config
+    "cv":           None,
+    "boilerplate":  None,
+    "contacts":     None,
+}
+
+
+@router.post("/ingest")
+async def ingest_file(
+    collection: str,
+    file: UploadFile = FastAPIFile(...),
+):
+    """
+    Accept a file upload, save it to disk, and queue it for background ingestion.
+    Returns a job_id immediately — the actual indexing happens in the background.
+
+    collection must be one of: cost_history | cv | boilerplate | contacts
+    """
+    if collection not in _INGEST_COLLECTION_MAP:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown collection '{collection}'. Valid values: {list(_INGEST_COLLECTION_MAP)}",
+        )
+
+    from backend.config import COST_HISTORY_DIR, CV_DIR, BOILERPLATE_DIR, CONTACTS_DIR
+    dest_dir = {
+        "cost_history": COST_HISTORY_DIR,
+        "cv":           CV_DIR,
+        "boilerplate":  BOILERPLATE_DIR,
+        "contacts":     CONTACTS_DIR,
+    }[collection]
+
+    dest = dest_dir / (file.filename or "upload")
+    stem, suffix, counter = dest.stem, dest.suffix, 1
+    while dest.exists():
+        dest = dest.parent / f"{stem}_{counter}{suffix}"
+        counter += 1
+
+    content = await file.read()
+    dest.write_bytes(content)
+
+    job_id = submit_job(file_path=dest, collection_name=_INGEST_COLLECTION_MAP[collection])
+    return {"job_id": job_id, "file": dest.name, "collection": collection, "status": "pending"}
+
+
+@router.get("/ingest/status/{job_id}")
+def ingest_status(job_id: str):
+    """Return the status of a single ingestion job."""
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "job_id":       job.job_id,
+        "file":         job.file_path.name,
+        "collection":   job.collection_name,
+        "status":       job.status,
+        "chunks_added": job.chunks_added,
+        "error":        job.error,
+        "queued_at":    job.queued_at,
+        "finished_at":  job.finished_at,
+    }
+
+
+@router.get("/ingest/queue")
+def ingest_queue():
+    """Return all ingestion jobs and the current queue depth."""
+    jobs = list_jobs()
+    return {
+        "queue_depth": queue_size(),
+        "jobs": [
+            {
+                "job_id":       j.job_id,
+                "file":         j.file_path.name,
+                "collection":   j.collection_name,
+                "status":       j.status,
+                "chunks_added": j.chunks_added,
+                "error":        j.error,
+                "queued_at":    j.queued_at,
+                "finished_at":  j.finished_at,
+            }
+            for j in jobs
+        ],
+    }
