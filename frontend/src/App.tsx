@@ -6,9 +6,9 @@ import { t, type Lang } from './i18n'
 type Tab = 'new-offer' | 'outputs'
 
 interface Status {
-  ollama_running: boolean
+  openai_connected: boolean
   recommended_model: string
-  local_models: string[]
+  available_models: string[]
   collection_counts: Record<string, number>
 }
 
@@ -36,7 +36,7 @@ export default function App() {
     localStorage.setItem('aisales_lang', next)
   }
 
-  const ollamaOk = status?.ollama_running ?? false
+  const ollamaOk = status?.openai_connected ?? false
 
   const tabLabels: Record<Tab, string> = {
     'new-offer': t('nav_new_offer', lang),
@@ -58,7 +58,7 @@ export default function App() {
         ))}
         <div className="nav-status">
           <span className={`dot${ollamaOk ? ' ok' : ''}`} />
-          <span>{ollamaOk ? t('ollama_running', lang) : t('ollama_offline', lang)}</span>
+          <span>{ollamaOk ? t('openai_connected', lang) : t('openai_disconnected', lang)}</span>
           {status?.recommended_model && (
             <span className="badge badge-blue" style={{ marginLeft: 8 }}>
               {status.recommended_model}

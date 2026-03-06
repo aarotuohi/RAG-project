@@ -25,10 +25,10 @@ for _d in [
 ]:
     _d.mkdir(parents=True, exist_ok=True)
 
-# Ollama settings 
-OLLAMA_BASE_URL   = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_LLM_MODEL  = os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:14b")   # overridden at startup
-OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+# OpenAI settings
+OPENAI_API_KEY    = os.environ.get("OPENAI_API_KEY", "")  # required — set in .env or environment
+OPENAI_LLM_MODEL  = os.environ.get("OPENAI_LLM_MODEL",  "gpt-4o-mini")        # chat model
+OPENAI_EMBED_MODEL = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")  # embedding model
 
 # ChromaDB settings 
 CHROMA_COLLECTION_COST     = "cost_history"

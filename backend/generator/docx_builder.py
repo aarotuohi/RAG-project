@@ -54,16 +54,17 @@ def _add_cost_table(doc: Document, steps: list[CostStep], grand_total: float):
         row_cells[5].text = str(step.persons)
         row_cells[6].text = f"{step.total:,.2f}"
 
-    # Grand total row
+    # Grand total row — includes both total hours and total cost
+    total_hours = sum(step.hours for step in steps)
     total_row = table.add_row().cells
     total_row[0].text = ""
     total_row[1].text = ""
     total_row[2].text = ""
-    total_row[3].text = ""
-    total_row[4].text = ""
-    total_row[5].text = "TOTAL"
+    total_row[3].text = "TOTAL"
+    total_row[4].text = f"{total_hours:,.1f} h"
+    total_row[5].text = ""
     total_row[6].text = f"{grand_total:,.2f} €"
-    for cell in [total_row[5], total_row[6]]:
+    for cell in [total_row[3], total_row[4], total_row[6]]:
         for para in cell.paragraphs:
             for run in para.runs:
                 run.bold = True
