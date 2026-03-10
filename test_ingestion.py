@@ -1,10 +1,9 @@
 """
 Quick test script: parse → chunk → embed → store one file, then query it.
 Run from project root:  python test_ingestion.py
+Requires Ollama to be running with nomic-embed-text pulled.
 """
 from pathlib import Path
-from dotenv import load_dotenv
-load_dotenv()
 
 FILE = Path("data/raw/offers/offer_Military_Communication_Helmet_Project_2026-02-23.docx")
 COLLECTION = "boilerplate"   # store into 'boilerplate' for this test
@@ -30,19 +29,21 @@ for i, d in enumerate(docs):
 
 # ── STEP 2: Embed + Store ─────────────────────────────────────────────────────
 print("=" * 60)
-print("STEP 2 — Embedding & Storing  (OpenAI → ChromaDB)")
+print("STEP 2 — Embedding & Storing  (Ollama → ChromaDB)")
 print("=" * 60)
 
 from backend.ingestion.document_loader import index_file
-from backend.vectorstore.chroma_client import collection_count
+from backend.vectorstore.chroma_client import collection_count, delete_collection
 
-before = collection_count(COLLECTION)
+# Clear the collection first so re-runs don't produce duplicates
+delete_collection(COLLECTION)
+print(f"Collection '{COLLECTION}' cleared.")
+
 added  = index_file(FILE, COLLECTION)
 after  = collection_count(COLLECTION)
 
-print(f"Chunks before : {before}")
 print(f"Chunks added  : {added}")
-print(f"Chunks after  : {after}")
+print(f"Chunks in DB  : {after}")
 print()
 
 # ── STEP 3: Similarity search ─────────────────────────────────────────────────

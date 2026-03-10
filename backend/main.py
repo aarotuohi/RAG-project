@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.routes.api import router
+from backend.ollama_client import ensure_ollama_running, recommend_model
 from backend.ingestion.ingestion_queue import start_worker
 import backend.config as cfg
 
@@ -19,15 +20,18 @@ async def lifespan(app: FastAPI):
     # Start background ingestion worker
     start_worker()
 
-    # Validate that an OpenAI API key has been provided
-    import os as _os
-    if not _os.environ.get("OPENAI_API_KEY"):
-        print(
-            "[AISALES] WARNING: OPENAI_API_KEY is not set. "
-            "Set it in a .env file or as an environment variable before using LLM features."
-        )
-    else:
-        print(f"[AISALES] OpenAI model: {cfg.OPENAI_LLM_MODEL}")
+    # Start Ollama if it is not already running
+    try:
+        ensure_ollama_running()
+    except RuntimeError as e:
+        print(f"[AISALES] WARNING: {e}")
+
+    # Pick the best model for the available hardware
+    if not os.environ.get("OLLAMA_LLM_MODEL"):
+        model = recommend_model()
+        os.environ["OLLAMA_LLM_MODEL"] = model
+        cfg.OLLAMA_LLM_MODEL = model
+        print(f"[AISALES] Using model: {model}")
 
     yield  # app is running
 

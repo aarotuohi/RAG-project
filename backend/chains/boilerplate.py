@@ -28,6 +28,27 @@ def read_boilerplate(key: str) -> str:
     return path.read_text(encoding="utf-8", errors="ignore").strip()
 
 
+def read_boilerplate_dated(key: str, doc_date: str = "") -> str:
+    """
+    Like read_boilerplate() but replaces {payment_due_date} with the last
+    calendar day of the month in which the document is dated.
+    Falls back to today if doc_date is empty or unparseable.
+    """
+    import calendar
+    from datetime import date
+
+    text = read_boilerplate(key)
+
+    try:
+        parsed = date.fromisoformat(doc_date) if doc_date else date.today()
+    except ValueError:
+        parsed = date.today()
+
+    last_day = calendar.monthrange(parsed.year, parsed.month)[1]
+    due_date = date(parsed.year, parsed.month, last_day).strftime("%Y-%m-%d")
+    return text.replace("{payment_due_date}", due_date)
+
+
 def read_custom_boilerplate(filepath: Path) -> str:
     """Read any arbitrary boilerplate file."""
     if not filepath.exists():

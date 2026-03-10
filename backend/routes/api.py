@@ -73,9 +73,9 @@ def open_file_dialog():
 @router.get("/status")
 def get_status():
     return {
-        "openai_connected": is_ollama_running(),   # is_ollama_running() now checks OpenAI connectivity
+        "ollama_running": is_ollama_running(),
         "recommended_model": recommend_model(),
-        "available_models": list_local_models(),
+        "local_models": list_local_models(),
         "collection_counts": {
             "cost_history": collection_count(CHROMA_COLLECTION_COST),
             "cv_database":  collection_count(CHROMA_COLLECTION_CV),

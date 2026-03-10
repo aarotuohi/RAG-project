@@ -4,7 +4,6 @@ import { t, type Lang } from '../i18n'
 interface Props {
   lang: Lang
 }
-
 interface ProjectData {
   first_name: string; last_name: string; company_name: string
   address: string; postal_code: string; project_name: string

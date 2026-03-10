@@ -5,8 +5,8 @@ const translations = {
     // Nav
     nav_new_offer: '✍️ New Offer',
     nav_outputs: '📄 Outputs',
-    openai_connected: 'OpenAI connected',
-    openai_disconnected: 'OpenAI disconnected',
+    ollama_running: 'Ollama running',
+    ollama_offline: 'Ollama offline',
 
     // NewOfferTab
     new_offer: 'New Offer',
@@ -83,8 +83,8 @@ const translations = {
     // Nav
     nav_new_offer: '✍️ Uusi tarjous',
     nav_outputs: '📄 Tuotokset',
-    openai_connected: 'OpenAI yhdistetty',
-    openai_disconnected: 'OpenAI ei yhteyttä',
+    ollama_running: 'Ollama käynnissä',
+    ollama_offline: 'Ollama offline',
 
     // NewOfferTab
     new_offer: 'Uusi tarjous',

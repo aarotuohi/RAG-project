@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import EmojiFlag from 'react-emoji-flag'
 import NewOfferTab from './tabs/NewOfferTab'
 import OutputsTab from './tabs/OutputsTab'
 import { t, type Lang } from './i18n'
@@ -6,9 +7,9 @@ import { t, type Lang } from './i18n'
 type Tab = 'new-offer' | 'outputs'
 
 interface Status {
-  openai_connected: boolean
+  ollama_running: boolean
   recommended_model: string
-  available_models: string[]
+  local_models: string[]
   collection_counts: Record<string, number>
 }
 
@@ -36,7 +37,7 @@ export default function App() {
     localStorage.setItem('aisales_lang', next)
   }
 
-  const ollamaOk = status?.openai_connected ?? false
+  const ollamaOk = status?.ollama_running ?? false
 
   const tabLabels: Record<Tab, string> = {
     'new-offer': t('nav_new_offer', lang),
@@ -58,7 +59,7 @@ export default function App() {
         ))}
         <div className="nav-status">
           <span className={`dot${ollamaOk ? ' ok' : ''}`} />
-          <span>{ollamaOk ? t('openai_connected', lang) : t('openai_disconnected', lang)}</span>
+          <span>{ollamaOk ? t('ollama_running', lang) : t('ollama_offline', lang)}</span>
           {status?.recommended_model && (
             <span className="badge badge-blue" style={{ marginLeft: 8 }}>
               {status.recommended_model}
@@ -68,17 +69,17 @@ export default function App() {
             onClick={toggleLang}
             style={{
               marginLeft: 12,
-              padding: '4px 10px',
+              padding: '2px 6px',
               borderRadius: 6,
-              border: '1px solid #d1d5db',
-              background: '#f9fafb',
+              border: 'none',
+              background: 'transparent',
               cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 600,
+              fontSize: 24,
+              lineHeight: 1,
             }}
             title={lang === 'en' ? 'Switch to Finnish' : 'Vaihda englanniksi'}
           >
-            {lang === 'en' ? '🇫🇮 FI' : '🇬🇧 EN'}
+            <EmojiFlag countryCode={lang === 'en' ? 'GB' : 'FI'} />
           </button>
         </div>
       </nav>

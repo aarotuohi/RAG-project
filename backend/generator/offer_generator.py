@@ -12,7 +12,7 @@ from backend.chains.section2_chain import generate_section2
 from backend.chains.section8_chain import generate_section8
 from backend.chains.boilerplate import (
     generate_thankyou, generate_timetable, generate_restrictions,
-    generate_material, generate_contact_text, read_boilerplate,
+    generate_material, generate_contact_text, read_boilerplate, read_boilerplate_dated,
 )
 from backend.generator.docx_builder import build_offer_document
 from backend.generator.pdf_converter import convert_to_pdf
@@ -80,9 +80,15 @@ def generate_offer(
 
         yield {"status": "progress", "section": "section9", "message": "Loading Section 9: Delivery Terms (boilerplate)…"}
         sections["section9"] = read_boilerplate("delivery")
+        sections["section9_payment"] = read_boilerplate_dated("payment", project.document_date)
 
         yield {"status": "progress", "section": "section10", "message": "Generating Section 10: Contact Information…"}
         salesperson_contact = _load_salesperson(project.salesperson_name)
+        # Populate salesperson fields into ProjectData so all chains can access them
+        if salesperson_contact:
+            project.salesperson_phone = salesperson_contact.get("phone", "")
+            project.salesperson_email = salesperson_contact.get("email", "")
+            project.salesperson_title = salesperson_contact.get("title", "")
         sections["section10_text"] = generate_contact_text(project, language=language, salesperson_contact=salesperson_contact)
 
         yield {"status": "progress", "section": "docx", "message": "Assembling DOCX document…"}

@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 # ── Base paths ────────────────────────────────────────────────────────────────
-BASE_DIR = Path(os.environ.get("AISALES_BASE_DIR", Path.home() / "AppData" / "Roaming" / "AISALES"))
+BASE_DIR = Path(os.environ.get("AISALES_BASE_DIR", Path(__file__).parent.parent / "data"))
 DOCUMENTS_DIR   = BASE_DIR / "documents"
 VECTORSTORE_DIR = BASE_DIR / "vectorstore"
 OUTPUTS_DIR     = BASE_DIR / "outputs"
@@ -25,10 +25,10 @@ for _d in [
 ]:
     _d.mkdir(parents=True, exist_ok=True)
 
-# OpenAI settings
-OPENAI_API_KEY    = os.environ.get("OPENAI_API_KEY", "")  # required — set in .env or environment
-OPENAI_LLM_MODEL  = os.environ.get("OPENAI_LLM_MODEL",  "gpt-4o-mini")        # chat model
-OPENAI_EMBED_MODEL = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")  # embedding model
+# Ollama settings
+OLLAMA_BASE_URL    = os.environ.get("OLLAMA_BASE_URL",   "http://localhost:11434")
+OLLAMA_LLM_MODEL   = os.environ.get("OLLAMA_LLM_MODEL",  "qwen2.5:14b")   # overridden at startup
+OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
 # ChromaDB settings 
 CHROMA_COLLECTION_COST     = "cost_history"
@@ -36,9 +36,9 @@ CHROMA_COLLECTION_CV       = "cv_database"
 CHROMA_COLLECTION_BOILER   = "boilerplate"
 CHROMA_COLLECTION_CONTACTS = "sales_contacts"
 
-# Text splitting 
-CHUNK_SIZE    = 800
-CHUNK_OVERLAP = 100
+# Text splitting
+CHUNK_SIZE    = 400   # ~400 tokens — stays within nomic-embed-text's 512-token context window
+CHUNK_OVERLAP = 80
 
 # Cost estimation work categories
 WORK_CATEGORIES = ["Services", "Mechanics", "Software", "Research", "Electronics", "Design"]
@@ -48,4 +48,5 @@ BOILERPLATE_FILES = {
     "documentation": "documentation.txt",
     "quality":       "quality_assurance.txt",
     "delivery":      "delivery_terms.txt",
+    "payment":       "payment_agreement.txt",
 }

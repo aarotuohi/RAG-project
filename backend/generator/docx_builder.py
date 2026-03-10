@@ -123,7 +123,11 @@ def build_offer_document(
     # ── Project info ──────────────────────────────────────────────────────────
     _add_paragraph(doc, f"Project name: {project.project_name}", bold=True)
     _add_paragraph(doc, f"Project number: {project.project_number}", bold=True)
-    _add_paragraph(doc, f"Salesperson: {project.salesperson_name}", bold=True)
+    _add_paragraph(doc, f"Salesperson: {project.salesperson_name}", bold=True)    
+    if project.salesperson_phone:
+        _add_paragraph(doc, f"Phone: {project.salesperson_phone}")
+    if project.salesperson_email:
+        _add_paragraph(doc, f"Email: {project.salesperson_email}")    
     doc.add_paragraph()
 
     # ── Thank-you paragraph ───────────────────────────────────────────────────
@@ -186,8 +190,10 @@ def build_offer_document(
     # ── Section 9 ─────────────────────────────────────────────────────────────
     _add_heading(doc, "9. Generic Terms of Delivery", 1)
     _add_paragraph(doc, sections.get("section9", ""))
+    doc.add_paragraph()    
+    if sections.get("section9_payment"):
+        _add_paragraph(doc, sections["section9_payment"])
     doc.add_paragraph()
-
     # ── Section 10 ────────────────────────────────────────────────────────────
     _add_heading(doc, "10. Contact Information", 1)
     _add_paragraph(doc, sections.get("section10_text", ""))

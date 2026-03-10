@@ -43,6 +43,19 @@ in a timely manner to enable project execution according to the agreed schedule.
 
 A copy of the full general terms and conditions is attached as Attachment 1.
 """,
+    "payment_agreement.txt": """\
+Payment Agreement
+
+This offer is valid until {payment_due_date}.
+
+Invoicing will follow the agreed project milestones. Each invoice is due within 14 days
+of the invoice date. Late payments are subject to a late payment interest as defined in
+the Finnish Interest Act (Korkolaki 633/1982).
+
+
+All prices are exclusive of VAT unless otherwise stated. VAT will be added at the
+applicable rate at the time of invoicing.
+""",
 }
 
 

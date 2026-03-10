@@ -8,13 +8,6 @@ import sys
 import uvicorn
 import webview
 
-# Load .env file early so OPENAI_API_KEY is available before the backend starts
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass  # python-dotenv not installed; rely on environment variables
-
 BACKEND_PORT = 8765
 BACKEND_URL = f"http://localhost:{BACKEND_PORT}"
 

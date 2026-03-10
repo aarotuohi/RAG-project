@@ -52,7 +52,7 @@ def _load_with_docling(path: Path) -> list[Document]:
     result = converter.convert(str(path))
     docling_doc = result.document
 
-    chunker = HybridChunker()
+    chunker = HybridChunker(max_tokens=400)  # keep under nomic-embed-text's 512-token limit
     lc_docs: list[Document] = []
     for chunk in chunker.chunk(docling_doc):
         text = chunk.text.strip() if hasattr(chunk, "text") else str(chunk).strip()
