@@ -54,6 +54,20 @@ const translations = {
     edit_regenerate: '✏️ Edit & Regenerate',
     back_transcript: '← Back to transcript',
 
+    // Section test buttons
+    test_section_title: 'Test Individual Sections',
+    test_section1_btn: '🔍 Test Section 1 (Company Summary)',
+    test_section2_btn: '🔍 Test Section 2 (Cost Estimation)',
+    testing: 'Running…',
+    test_result_label: 'Result',
+    test_company_bg: 'Company Background',
+    test_goals: 'Goals Text',
+    test_description: 'Description',
+    test_steps: 'Cost Steps',
+    test_total: 'Grand Total',
+    test_close: 'Close',
+    test_error: 'Test failed',
+
     // Section labels (progress)
     sec_thank_you: 'Thank-you paragraph',
     sec_section1: '1. Background & Goals',
@@ -131,6 +145,20 @@ const translations = {
     download_pdf: '⬇️ Lataa PDF',
     edit_regenerate: '✏️ Muokkaa & luo uudelleen',
     back_transcript: '← Takaisin litteraatin valintaan',
+
+    // Section test buttons
+    test_section_title: 'Testaa yksittäiset osiot',
+    test_section1_btn: '🔍 Testaa osio 1 (Yrityksen yhteenveto)',
+    test_section2_btn: '🔍 Testaa osio 2 (Kustannusarvio)',
+    testing: 'Suoritetaan…',
+    test_result_label: 'Tulos',
+    test_company_bg: 'Yrityksen taustatiedot',
+    test_goals: 'Tavoiteteksti',
+    test_description: 'Kuvaus',
+    test_steps: 'Kustannusaskeleet',
+    test_total: 'Kokonaissumma',
+    test_close: 'Sulje',
+    test_error: 'Testi epäonnistui',
 
     // Section labels (progress)
     sec_thank_you: 'Kiitoskappale',

@@ -4,8 +4,8 @@ Date: February 20, 2026
 Time: 09:00–10:00
 
 Participants:
-John Andersson (Patria Oyj)
-Maria Lehtinen (Patria Oyj)
+John Andersson (Nokia)
+Maria Lehtinen (Nokia)
 Alex Carter (Tech Solutions Ltd)
 Priya Nair (Tech Solutions Ltd)
 

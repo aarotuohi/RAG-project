@@ -72,6 +72,9 @@ export default function NewOfferTab({ lang }: Props) {
   const [extractError, setExtractError] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [pickingFile, setPickingFile] = useState(false)
+  const [testingSection, setTestingSection] = useState<'section1' | 'section2' | null>(null)
+  const [testResult, setTestResult] = useState<{ section: string; result: any } | null>(null)
+  const [testError, setTestError] = useState('')
 
   const set = (name: string, value: string) => setProject(p => ({ ...p, [name]: value }))
 
@@ -183,6 +186,30 @@ export default function NewOfferTab({ lang }: Props) {
 
   const download = (path: string) => {
     window.open(`/api/download?path=${encodeURIComponent(path)}`, '_blank')
+  }
+
+  const runSectionTest = async (section: 'section1' | 'section2') => {
+    setTestingSection(section)
+    setTestResult(null)
+    setTestError('')
+    try {
+      const r = await fetch('/api/test-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section, project, enable_web_search: webSearch, document_language: documentLanguage }),
+      })
+      if (!r.ok) {
+        const err = await r.json()
+        setTestError(err.detail || t('test_error', lang))
+        return
+      }
+      const data = await r.json()
+      setTestResult(data)
+    } catch {
+      setTestError(t('test_error', lang))
+    } finally {
+      setTestingSection(null)
+    }
   }
 
   return (
@@ -315,6 +342,93 @@ export default function NewOfferTab({ lang }: Props) {
               <Field label={t('required_expertise', lang)} name="required_expertise" value={project.required_expertise} onChange={set} full />
               <Field label={t('other_notes', lang)} name="other_notes" value={project.other_notes} onChange={set} full area />
             </div>
+          </div>
+
+          <div className="card">
+            <h2>{t('test_section_title', lang)}</h2>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: testResult || testError ? 16 : 0 }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => runSectionTest('section1')}
+                disabled={!!testingSection || !project.company_name}
+                style={{ fontSize: 13 }}
+              >
+                {testingSection === 'section1' ? <><span className="spinner" /> {t('testing', lang)}</> : t('test_section1_btn', lang)}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => runSectionTest('section2')}
+                disabled={!!testingSection || !project.project_name}
+                style={{ fontSize: 13 }}
+              >
+                {testingSection === 'section2' ? <><span className="spinner" /> {t('testing', lang)}</> : t('test_section2_btn', lang)}
+              </button>
+            </div>
+
+            {testError && (
+              <div className="alert alert-error" style={{ marginBottom: 8 }}>{testError}</div>
+            )}
+
+            {testResult && (
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, fontSize: 13 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <strong>{t('test_result_label', lang)}: {testResult.section}</strong>
+                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: '3px 10px' }} onClick={() => setTestResult(null)}>{t('test_close', lang)}</button>
+                </div>
+
+                {testResult.section === 'section1' && (
+                  <>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('test_company_bg', lang)}</div>
+                      <div style={{ whiteSpace: 'pre-wrap', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, padding: 10 }}>{testResult.result?.company_background || '—'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('test_goals', lang)}</div>
+                      <div style={{ whiteSpace: 'pre-wrap', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, padding: 10 }}>{testResult.result?.goals_text || '—'}</div>
+                    </div>
+                  </>
+                )}
+
+                {testResult.section === 'section2' && (
+                  <>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('test_description', lang)}</div>
+                      <div style={{ whiteSpace: 'pre-wrap', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, padding: 10 }}>{testResult.result?.description_text || '—'}</div>
+                    </div>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('test_steps', lang)}</div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ background: '#f1f5f9' }}>
+                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Step</th>
+                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Category</th>
+                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Hours</th>
+                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Rate</th>
+                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Persons</th>
+                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(testResult.result?.steps || []).map((s: any, i: number) => (
+                            <tr key={i} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                              <td style={{ padding: '4px 8px' }}>{s.name}</td>
+                              <td style={{ padding: '4px 8px', color: '#6b7280' }}>{s.category}</td>
+                              <td style={{ padding: '4px 8px', textAlign: 'right' }}>{s.hours}</td>
+                              <td style={{ padding: '4px 8px', textAlign: 'right' }}>{s.hourly_rate}€</td>
+                              <td style={{ padding: '4px 8px', textAlign: 'right' }}>{s.persons}</td>
+                              <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 600 }}>{s.total_cost?.toFixed(0)}€</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 14 }}>
+                      {t('test_total', lang)}: {testResult.result?.grand_total?.toFixed(0)}€
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="card">

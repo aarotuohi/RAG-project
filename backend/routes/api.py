@@ -76,7 +76,7 @@ def get_status():
     return {
         "ollama_running": is_ollama_running(),
         "active_model": _cfg.OLLAMA_LLM_MODEL,
-        "recommended_model": recommend_model(),
+        "recommended_model": "qwen2.5:14b-instruct-q4_K_M",
         "local_models": list_local_models(),
         "collection_counts": {
             "cost_history": collection_count(CHROMA_COLLECTION_COST),
@@ -164,6 +164,51 @@ def list_outputs():
     """List all generated offer files."""
     files = [{"name": f.name, "path": str(f), "size": f.stat().st_size} for f in OUTPUTS_DIR.iterdir() if f.is_file()]
     return sorted(files, key=lambda x: x["name"], reverse=True)
+
+
+# ── Section Test Endpoints ───────────────────────────────────────────────────
+
+class TestGenerateRequest(BaseModel):
+    section: str   # "section1" | "section2"
+    project: dict
+    enable_web_search: bool = True
+    document_language: str = "en"
+
+
+@router.post("/test-generate")
+def test_generate(req: TestGenerateRequest):
+    """Run only section1 or section2 and return raw result for testing."""
+    from backend.chains.section1_chain import generate_section1
+    from backend.chains.section2_chain import generate_section2
+    from backend.chains.extraction_chain import ProjectData
+
+    project = ProjectData(**{k: v for k, v in req.project.items() if k in ProjectData.__dataclass_fields__})
+
+    if req.section == "section1":
+        try:
+            result = generate_section1(project, enable_web_search=req.enable_web_search, language=req.document_language)
+            return {"section": "section1", "result": result}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    elif req.section == "section2":
+        try:
+            from dataclasses import asdict
+            raw = generate_section2(project, language=req.document_language)
+            steps = raw.get("steps", [])
+            return {
+                "section": "section2",
+                "result": {
+                    "description_text": raw.get("description_text", ""),
+                    "grand_total": raw.get("grand_total", 0),
+                    "payment_type": raw.get("payment_type", ""),
+                    "steps": [asdict(s) if hasattr(s, "__dataclass_fields__") else s for s in steps],
+                },
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    raise HTTPException(status_code=400, detail="section must be 'section1' or 'section2'")
 
 
 # From her on it is the bottleneck solution
