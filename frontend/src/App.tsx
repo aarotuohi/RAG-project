@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import EmojiFlag from 'react-emoji-flag'
 import NewOfferTab from './tabs/NewOfferTab'
 import OutputsTab from './tabs/OutputsTab'
 import { t, type Lang } from './i18n'
@@ -8,6 +7,7 @@ type Tab = 'new-offer' | 'outputs'
 
 interface Status {
   ollama_running: boolean
+  active_model: string
   recommended_model: string
   local_models: string[]
   collection_counts: Record<string, number>
@@ -20,8 +20,8 @@ export default function App() {
 
   const fetchStatus = () => {
     fetch('/api/status')
-      .then(r => r.json())
-      .then(setStatus)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(data => { if (data && typeof data === 'object' && !Array.isArray(data)) setStatus(data) })
       .catch(() => setStatus(null))
   }
 
@@ -59,33 +59,34 @@ export default function App() {
         ))}
         <div className="nav-status">
           <span className={`dot${ollamaOk ? ' ok' : ''}`} />
-          <span>{ollamaOk ? t('ollama_running', lang) : t('ollama_offline', lang)}</span>
-          {status?.recommended_model && (
-            <span className="badge badge-blue" style={{ marginLeft: 8 }}>
-              {status.recommended_model}
-            </span>
-          )}
+          <span style={{ minWidth: 90 }}>{ollamaOk ? t('ollama_running', lang) : t('ollama_offline', lang)}</span>
+          <span className="badge badge-blue" style={{ marginLeft: 8, minWidth: 60, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={status?.recommended_model ? `Recommended: ${status.recommended_model}` : ''}>
+            {status?.active_model ?? '…'}
+          </span>
           <button
             onClick={toggleLang}
             style={{
               marginLeft: 12,
-              padding: '2px 6px',
+              padding: '3px 10px',
               borderRadius: 6,
-              border: 'none',
-              background: 'transparent',
+              border: '1px solid #d1d5db',
+              background: '#f9fafb',
               cursor: 'pointer',
-              fontSize: 24,
-              lineHeight: 1,
+              fontSize: 13,
+              fontWeight: 600,
+              letterSpacing: 1,
             }}
             title={lang === 'en' ? 'Switch to Finnish' : 'Vaihda englanniksi'}
           >
-            <EmojiFlag countryCode={lang === 'en' ? 'GB' : 'FI'} />
+            {lang === 'en' ? 'FI' : 'EN'}
           </button>
         </div>
       </nav>
       <main className="content">
-        {tab === 'new-offer' && <NewOfferTab lang={lang} />}
-        {tab === 'outputs' && <OutputsTab lang={lang} />}
+        <div className="tab-content">
+          {tab === 'new-offer' && <NewOfferTab lang={lang} />}
+          {tab === 'outputs' && <OutputsTab lang={lang} />}
+        </div>
       </main>
     </div>
   )

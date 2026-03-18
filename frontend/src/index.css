@@ -18,12 +18,12 @@ body { color: var(--text); background: var(--gray-bg); }
 .app { display: flex; flex-direction: column; height: 100vh; }
 
 /* Nav */
-.nav { background: var(--blue); display: flex; align-items: center; padding: 0 24px; height: 52px; gap: 4px; }
-.nav-brand { color: white; font-weight: 700; font-size: 18px; margin-right: 24px; letter-spacing: 1px; }
-.nav-tab { background: none; border: none; color: rgba(255,255,255,0.75); padding: 8px 16px; border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.15s; }
+.nav { background: var(--blue); display: flex; align-items: center; padding: 0 24px; height: 52px; min-height: 52px; max-height: 52px; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
+.nav-brand { color: white; font-weight: 700; font-size: 18px; margin-right: 24px; letter-spacing: 1px; flex-shrink: 0; white-space: nowrap; }
+.nav-tab { background: none; border: none; color: rgba(255,255,255,0.75); padding: 8px 16px; border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 500; transition: background 0.15s, color 0.15s; flex-shrink: 0; white-space: nowrap; min-width: 120px; text-align: center; }
 .nav-tab:hover { color: white; background: rgba(255,255,255,0.1); }
 .nav-tab.active { color: white; background: rgba(255,255,255,0.2); }
-.nav-status { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(255,255,255,0.85); }
+.nav-status { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(255,255,255,0.85); flex-shrink: 0; white-space: nowrap; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: #f87171; }
 .dot.ok { background: #34d399; }
 
@@ -79,6 +79,8 @@ textarea { resize: vertical; min-height: 80px; }
 .progress-dot.error { background: var(--red); }
 .progress-dot.warning { background: var(--yellow); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.tab-content { animation: fadeIn 0.15s ease; }
 
 /* Badge */
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; }

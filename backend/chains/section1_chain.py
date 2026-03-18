@@ -1,10 +1,9 @@
 """
 Section 1 chain — Background and goals.
-  Part A: Company homepage crawled with crawl4ai for rich background info.
+  Part A: Company homepage fetched with requests for background info.
   Part B: Goals and constraints extracted from the transcript.
 """
 from __future__ import annotations
-import asyncio
 import re
 import requests
 from langchain_core.prompts import PromptTemplate
@@ -13,7 +12,7 @@ from backend.chains.extraction_chain import ProjectData
 
 
 def _find_homepage_url(company_name: str) -> str | None:
-    """Use Bing to find the company's homepage URL """
+    """Use Bing to find the company's homepage URL."""
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -28,38 +27,64 @@ def _find_homepage_url(company_name: str) -> str | None:
         headers=headers, timeout=10,
     )
     resp.raise_for_status()
-    # Extract the first href that looks like a real homepage from Bing's result links
-    urls = re.findall(r'<cite[^>]*>(https?://[^<\s]+)</cite>', resp.text)
-    if not urls:
-        # Fallback: any https link that isn't bing/microsoft itself
-        urls = re.findall(r'href="(https?://(?!(?:www\.)?bing\.com|(?:www\.)?microsoft\.com)[^"]+)"', resp.text)
+    patterns = [
+        r'<cite[^>]*>(https?://[^<\s]+)</cite>',
+        r'<cite[^>]*>([^<\s]+)</cite>',
+        r'"url"\s*:\s*"(https?://(?!(?:www\.)?bing\.com|(?:www\.)?microsoft\.com)[^"]+)"',
+        r'href="(https?://(?!(?:www\.)?bing\.com|(?:www\.)?microsoft\.com)[^"&]+)"',
+    ]
+    urls = []
+    for pattern in patterns:
+        found = re.findall(pattern, resp.text)
+        if found:
+            urls = found
+            break
+
     for url in urls:
-        # Prefer short root-level URLs (homepages)
         clean = url.rstrip("/")
         if clean.count("/") <= 3:
             return clean
     return urls[0] if urls else None
 
 
-async def _crawl_url(url: str) -> str:
-    """Crawl a URL with crawl4ai and return clean markdown text."""
-    from crawl4ai import AsyncWebCrawler
-    async with AsyncWebCrawler() as crawler:
-        result = await crawler.arun(url=url)
-        return result.markdown or result.cleaned_html or ""
+def _fetch_page_text(url: str) -> str:
+    """Fetch a URL with requests and strip HTML tags to get plain text."""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0.0.0 Safari/537.36"
+        )
+    }
+    resp = requests.get(url, headers=headers, timeout=15)
+    resp.raise_for_status()
+    html = resp.text
+    # Remove scripts, styles, and tags
+    html = re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r'<[^>]+>', ' ', html)
+    html = re.sub(r'&[a-zA-Z]+;', ' ', html)
+    text = re.sub(r'\s+', ' ', html).strip()
+    return text
 
 
 def _get_company_content(company_name: str) -> str:
-    """Find the company's homepage and crawl it with crawl4ai."""
+    """Find the company's homepage and fetch its text content."""
     homepage = _find_homepage_url(company_name)
     if not homepage:
-        return ""
+        slug = re.sub(r'[^a-z0-9]', '', company_name.lower().split()[0])
+        homepage = f"https://www.{slug}.com"
+        print(f"[section1] Bing found no URL, trying fallback: {homepage}")
+    else:
+        print(f"[section1] Found homepage: {homepage}")
     try:
-        content = asyncio.run(_crawl_url(homepage))
-        # Trim to a reasonable size for the LLM prompt
+        content = _fetch_page_text(homepage)
+        print(f"[section1] Fetched {len(content)} chars from {homepage}")
         return content[:4000].strip()
-    except Exception:
+    except Exception as e:
+        print(f"[section1] Fetch failed for {homepage}: {e}")
         return ""
+
+
 
 _BACKGROUND_PROMPT = PromptTemplate.from_template(
     """Based on the following content from {company_name}'s website, 

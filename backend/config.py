@@ -27,7 +27,7 @@ for _d in [
 
 # Ollama settings
 OLLAMA_BASE_URL    = os.environ.get("OLLAMA_BASE_URL",   "http://localhost:11434")
-OLLAMA_LLM_MODEL   = os.environ.get("OLLAMA_LLM_MODEL",  "qwen2.5:14b")   # overridden at startup
+OLLAMA_LLM_MODEL   = os.environ.get("OLLAMA_LLM_MODEL",  "qwen2.5:14b-instruct-q4_K_M")   # overridden at startup
 OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
 # ChromaDB settings 

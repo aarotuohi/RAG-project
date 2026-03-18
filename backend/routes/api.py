@@ -15,6 +15,7 @@ from backend.generator.offer_generator import generate_offer
 from backend.vectorstore.chroma_client import collection_count
 from backend.ollama_client import recommend_model, list_local_models, is_ollama_running
 from backend.ingestion.ingestion_queue import submit_job, get_job, list_jobs, queue_size
+import backend.config as _cfg
 from backend.config import (
     TRANSCRIPTS_DIR,
     CHROMA_COLLECTION_COST, CHROMA_COLLECTION_CV, CHROMA_COLLECTION_BOILER, CHROMA_COLLECTION_CONTACTS,
@@ -74,6 +75,7 @@ def open_file_dialog():
 def get_status():
     return {
         "ollama_running": is_ollama_running(),
+        "active_model": _cfg.OLLAMA_LLM_MODEL,
         "recommended_model": recommend_model(),
         "local_models": list_local_models(),
         "collection_counts": {
@@ -135,7 +137,11 @@ def generate(req: GenerateRequest):
         for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.document_language):
             yield json.dumps(event) + "\n"
 
-    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
 
 
 # ── File Download & Listing ───────────────────────────────────────────────────

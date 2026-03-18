@@ -5,8 +5,10 @@ Starts the FastAPI backend in a background thread, then opens PyWebView.
 import threading
 import time
 import sys
+import ctypes
 import uvicorn
 import webview
+
 
 BACKEND_PORT = 8765
 BACKEND_URL = f"http://localhost:{BACKEND_PORT}"

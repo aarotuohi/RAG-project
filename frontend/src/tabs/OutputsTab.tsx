@@ -24,8 +24,8 @@ export default function OutputsTab({ lang }: Props) {
   const fetchOutputs = () => {
     setLoading(true)
     fetch('/api/outputs')
-      .then(r => r.json())
-      .then(setFiles)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(data => setFiles(Array.isArray(data) ? data : []))
       .catch(() => setFiles([]))
       .finally(() => setLoading(false))
   }

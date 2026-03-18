@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.routes.api import router
-from backend.ollama_client import ensure_ollama_running, recommend_model
+from backend.ollama_client import ensure_ollama_running
 from backend.ingestion.ingestion_queue import start_worker
 import backend.config as cfg
 
@@ -26,12 +26,12 @@ async def lifespan(app: FastAPI):
     except RuntimeError as e:
         print(f"[AISALES] WARNING: {e}")
 
-    # Pick the best model for the available hardware
-    if not os.environ.get("OLLAMA_LLM_MODEL"):
-        model = recommend_model()
-        os.environ["OLLAMA_LLM_MODEL"] = model
-        cfg.OLLAMA_LLM_MODEL = model
-        print(f"[AISALES] Using model: {model}")
+    # Use the standard model from config unless explicitly overridden via env var
+    if os.environ.get("OLLAMA_LLM_MODEL"):
+        cfg.OLLAMA_LLM_MODEL = os.environ["OLLAMA_LLM_MODEL"]
+    else:
+        os.environ["OLLAMA_LLM_MODEL"] = cfg.OLLAMA_LLM_MODEL
+    print(f"[AISALES] Using model: {cfg.OLLAMA_LLM_MODEL}")
 
     yield  # app is running
 
