@@ -1,100 +1,179 @@
 """
 Section 1 chain — Background and goals.
-  Part A: Company homepage fetched with requests for background info.
+  Part A: Company homepage + about page fetched with requests for background info.
   Part B: Goals and constraints extracted from the transcript.
 """
 from __future__ import annotations
 import re
 import requests
+from urllib.parse import quote, urlparse, urljoin
 from langchain_core.prompts import PromptTemplate
 from backend.ollama_client import get_llm
 from backend.chains.extraction_chain import ProjectData
 
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,fi;q=0.8",
+}
+
+# Domains that are definitely not the company's own site
+_SKIP_DOMAINS = {
+    "google.com", "bing.com", "duckduckgo.com", "yahoo.com",
+    "linkedin.com", "facebook.com", "twitter.com", "instagram.com",
+    "youtube.com", "wikipedia.org", "wikimedia.org",
+    "clutch.co", "g2.com", "trustpilot.com", "glassdoor.com",
+    "indeed.com", "bloomberg.com", "reuters.com", "forbes.com",
+    "crunchbase.com", "zoominfo.com",
+}
+
 
 def _find_homepage_url(company_name: str) -> str | None:
-    """Use Bing to find the company's homepage URL."""
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0"
-        ),
-        "Accept-Language": "en-FI,fi;q=0.9,en-US;q=0.8,en;q=0.7",
-    }
-    query = requests.utils.quote(f"{company_name} official website")
-    resp = requests.get(
-        f"https://www.bing.com/search?q={query}&count=5",
-        headers=headers, timeout=10,
-    )
-    resp.raise_for_status()
-    patterns = [
-        r'<cite[^>]*>(https?://[^<\s]+)</cite>',
-        r'<cite[^>]*>([^<\s]+)</cite>',
-        r'"url"\s*:\s*"(https?://(?!(?:www\.)?bing\.com|(?:www\.)?microsoft\.com)[^"]+)"',
-        r'href="(https?://(?!(?:www\.)?bing\.com|(?:www\.)?microsoft\.com)[^"&]+)"',
-    ]
-    urls = []
-    for pattern in patterns:
-        found = re.findall(pattern, resp.text)
-        if found:
-            urls = found
-            break
+    """Use DuckDuckGo HTML search to find the company's homepage."""
+    query = quote(f"{company_name} official website")
+    try:
+        resp = requests.get(
+            f"https://html.duckduckgo.com/html/?q={query}",
+            headers=_HEADERS, timeout=12,
+        )
+        resp.raise_for_status()
+        # DDG encodes real URLs in uddg= redirect params
+        raw_urls = re.findall(r'uddg=(https?[^&"]+)', resp.text)
+        urls = [requests.utils.unquote(u) for u in raw_urls]
+        if not urls:
+            urls = re.findall(r'class="result__url"[^>]*>\s*(https?://[^\s<"]+)', resp.text)
+    except Exception as e:
+        print(f"[section1] DuckDuckGo search failed: {e}")
+        urls = []
 
     for url in urls:
-        clean = url.rstrip("/")
-        if clean.count("/") <= 3:
-            return clean
-    return urls[0] if urls else None
+        try:
+            parsed = urlparse(url)
+            hostname = (parsed.hostname or "").removeprefix("www.")
+        except Exception:
+            continue
+        if any(skip in hostname for skip in _SKIP_DOMAINS):
+            continue
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    # Fallback: probe common TLD patterns for the company name
+    slug = re.sub(r"[^a-z0-9]", "", company_name.lower().replace(" ", ""))
+    for tld in (".fi", ".com"):
+        candidate = f"https://www.{slug}{tld}"
+        try:
+            r = requests.head(candidate, headers=_HEADERS, timeout=5, allow_redirects=True)
+            if r.status_code < 400:
+                print(f"[section1] Fallback probe succeeded: {candidate}")
+                return candidate
+        except Exception:
+            pass
+    return None
 
 
-def _fetch_page_text(url: str) -> str:
-    """Fetch a URL with requests and strip HTML tags to get plain text."""
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        )
-    }
-    resp = requests.get(url, headers=headers, timeout=15)
+def _extract_text_from_html(html: str) -> str:
+    """Extract meaningful text by targeting content tags and skipping chrome/boilerplate."""
+    # Nuke non-content blocks entirely
+    html = re.sub(
+        r'<(script|style|nav|header|footer|aside|iframe|noscript|svg|form)[^>]*>.*?</\1>',
+        " ", html, flags=re.DOTALL | re.IGNORECASE,
+    )
+    # Pull text out of content-bearing tags
+    chunks = re.findall(
+        r'<(?:p|h[1-6]|li|dd|blockquote|section|article|main)[^>]*>(.*?)</(?:p|h[1-6]|li|dd|blockquote|section|article|main)>',
+        html, flags=re.DOTALL | re.IGNORECASE,
+    )
+    lines = []
+    for chunk in chunks:
+        text = re.sub(r"<[^>]+>", " ", chunk)
+        text = re.sub(r"&(?:[a-zA-Z]+|#\d+);", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) > 40:
+            lines.append(text)
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    result = []
+    for line in lines:
+        key = line[:80]
+        if key not in seen:
+            seen.add(key)
+            result.append(line)
+    return "\n".join(result)
+
+
+def _find_about_url(homepage: str, html: str) -> str | None:
+    """Detect a link to an About / Company page within the homepage HTML."""
+    matches = re.findall(
+        r'href="([^"#]{1,100}(?:about|yritys|meistä|meista|company|who-we-are|tietoa)[^"]{0,60})"',
+        html, flags=re.IGNORECASE,
+    )
+    for m in matches:
+        full = urljoin(homepage, m)
+        # Stay on the same domain
+        if urlparse(full).netloc == urlparse(homepage).netloc:
+            return full
+    return None
+
+
+def _fetch_page(url: str) -> tuple[str, str]:
+    """Fetch a page and return (raw_html, extracted_clean_text)."""
+    resp = requests.get(url, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
     html = resp.text
-    # Remove scripts, styles, and tags
-    html = re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r'<[^>]+>', ' ', html)
-    html = re.sub(r'&[a-zA-Z]+;', ' ', html)
-    text = re.sub(r'\s+', ' ', html).strip()
-    return text
+    return html, _extract_text_from_html(html)
 
 
 def _get_company_content(company_name: str) -> str:
-    """Find the company's homepage and fetch its text content."""
+    """Find homepage and about page; return combined clean text content."""
     homepage = _find_homepage_url(company_name)
     if not homepage:
-        slug = re.sub(r'[^a-z0-9]', '', company_name.lower().split()[0])
-        homepage = f"https://www.{slug}.com"
-        print(f"[section1] Bing found no URL, trying fallback: {homepage}")
-    else:
-        print(f"[section1] Found homepage: {homepage}")
-    try:
-        content = _fetch_page_text(homepage)
-        print(f"[section1] Fetched {len(content)} chars from {homepage}")
-        return content[:4000].strip()
-    except Exception as e:
-        print(f"[section1] Fetch failed for {homepage}: {e}")
+        print(f"[section1] Could not find homepage for '{company_name}'")
         return ""
+    print(f"[section1] Found homepage: {homepage}")
 
+    parts: list[str] = []
+    try:
+        html, text = _fetch_page(homepage)
+        if text:
+            parts.append(text[:2500])
+        print(f"[section1] Homepage: {len(text)} chars extracted")
+
+        about_url = _find_about_url(homepage, html)
+        if about_url:
+            try:
+                _, about_text = _fetch_page(about_url)
+                if about_text:
+                    parts.append(about_text[:2500])
+                print(f"[section1] About page ({about_url}): {len(about_text)} chars extracted")
+            except Exception as e:
+                print(f"[section1] About page fetch failed ({about_url}): {e}")
+    except Exception as e:
+        print(f"[section1] Homepage fetch failed ({homepage}): {e}")
+
+    return "\n\n---\n\n".join(parts)
 
 
 _BACKGROUND_PROMPT = PromptTemplate.from_template(
-    """Based on the following content from {company_name}'s website, 
-write a concise 2-3 sentence background description of what the company does and their main business area.
-Write in a professional, neutral tone suitable for a sales offer document.
+    """You are writing the background section of a professional B2B sales offer document.
+
+Using only the website content below, write 2-4 sentences describing {company_name}.
+Cover: what industry they operate in, what products or services they provide,
+and any notable scale, specialization, or geographic reach mentioned on the site.
+
+Rules:
+- Write in third person ("Company X is…"), professional and neutral tone.
+- Do NOT start with "Based on the website" or "According to the content".
+- Do NOT invent facts not present in the content.
+- Do NOT include cookie notices, navigation items, or marketing slogans.
 
 Website content:
 {search_results}
 
-Background description:"""
+Company background:"""
 )
 
 _GOALS_PROMPT = PromptTemplate.from_template(
@@ -117,7 +196,7 @@ def generate_section1(project: ProjectData, enable_web_search: bool = True, lang
     lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     llm = get_llm()
 
-    # --- Part A: Company background from crawl4ai ---
+    # --- Part A: Company background ---
     company_background = ""
     if enable_web_search and project.company_name:
         try:
@@ -126,7 +205,7 @@ def generate_section1(project: ProjectData, enable_web_search: bool = True, lang
                 raise ValueError("No content retrieved from company website")
             prompt = _BACKGROUND_PROMPT.format(
                 company_name=project.company_name,
-                search_results=results[:3000],
+                search_results=results[:5000],
             ) + f"\n\n{lang_note}"
             company_background = llm.invoke(prompt).strip()
         except Exception as e:
