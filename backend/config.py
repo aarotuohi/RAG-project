@@ -1,6 +1,9 @@
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()  # loads .env from project root (if present)
 
 # ── Base paths ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(os.environ.get("AISALES_BASE_DIR", Path(__file__).parent.parent / "data"))

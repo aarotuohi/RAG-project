@@ -104,11 +104,7 @@ Material transformation text:"""
 
 
 def generate_thankyou(project: ProjectData, language: str = "en") -> str:
-    lang_note = "Write the entire response in Finnish." 
-    if language == "fi":
-        "Write in Finnish"
-    else: 
-        "Write the entire response in English."
+    lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     llm = get_llm()
     prompt = _THANKYOU_PROMPT.format(
         company_name=project.company_name or "your company",

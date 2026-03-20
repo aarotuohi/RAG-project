@@ -3,9 +3,14 @@ Full pipeline test: Parse → Chunk → Embed → Store → Query
 Tests .txt, .docx, and .xlsx file types separately.
 
 Run from project root:
-    python test_pipeline.py              # all tests
+    python test_pipeline.py              # all tests (temp collections, cleaned up after)
     python test_pipeline.py --tests 1 3  # only TXT + XLSX (skips slow Docling)
     python test_pipeline.py --tests 2    # only DOCX (Docling must be working)
+
+Ingest Excel into the REAL cost_history collection (for actual cost estimation):
+    python test_pipeline.py --production
+    python test_pipeline.py --production --xlsx path/to/my_file.xlsx
+    python test_pipeline.py --production --xlsx path/to/file1.xlsx --keep
 
 Requires:
   - Ollama running with nomic-embed-text pulled
@@ -27,7 +32,28 @@ parser.add_argument(
     metavar="N",
     help="Which tests to run (1=TXT, 2=DOCX/Docling, 3=XLSX). Default: all.",
 )
+parser.add_argument(
+    "--all-chunks", action="store_true",
+    help="Print every chunk in full (no count limit, no content truncation). Useful for inspecting Excel extraction.",
+)
+parser.add_argument(
+    "--production", action="store_true",
+    help="Store Excel into the REAL cost_history collection (no cleanup). Implies --tests 3.",
+)
+parser.add_argument(
+    "--xlsx", default=None,
+    metavar="PATH",
+    help="Override the Excel file path used in TEST 3 (default: laskentapohja.xlsx).",
+)
+parser.add_argument(
+    "--keep", action="store_true",
+    help="Do NOT clear the collection before ingesting (append mode). Only affects --production.",
+)
 args = parser.parse_args()
+
+# --production forces TEST 3 only
+if args.production:
+    args.tests = [3]
 RUN = set(args.tests)
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -35,7 +61,7 @@ RUN = set(args.tests)
 # ─────────────────────────────────────────────────────────────────────────────
 TXT_FILE  = Path("transcript_example.txt")
 DOCX_FILE = Path("data/raw/offers/offer_Military_Communication_Helmet_Project_2026-02-23.docx")
-XLSX_FILE = Path("data/raw/offer_calculations/laskentapohja.xlsx")
+XLSX_FILE = Path(args.xlsx) if args.xlsx else Path("data/raw/offer_calculations/laskentapohja.xlsx")
 
 # Temporary test collections — cleaned up at the end
 TEST_COLLECTION_TXT  = "test_txt_pipeline"
@@ -50,14 +76,17 @@ def _truncate(text: str, width: int = 180) -> str:
 
 
 def _print_chunks(docs, max_show: int = 5):
-    for i, d in enumerate(docs[:max_show]):
+    show_all = max_show is None
+    limit = len(docs) if show_all else max_show
+    for i, d in enumerate(docs[:limit]):
         heading = d.metadata.get("heading", "")
         sheet   = d.metadata.get("sheet", "")
         tag     = f"heading={heading!r}" if heading else (f"sheet={sheet!r}" if sheet else "")
         pre     = "pre-chunked" if d.metadata.get("pre_chunked") else "splitter"
         print(f"  Chunk {i+1:02d}  [{pre}]  {len(d.page_content):4d} chars  {tag}")
-        print(f"           {_truncate(d.page_content, 130)!r}")
-    if len(docs) > max_show:
+        content = d.page_content.strip() if show_all else _truncate(d.page_content, 130)
+        print(f"           {content!r}")
+    if not show_all and len(docs) > max_show:
         print(f"  ... ({len(docs) - max_show} more chunks not shown)")
     print()
 
@@ -86,9 +115,15 @@ except ImportError as exc:
     )
 
 print(SEP)
-print("AISALES -- Pipeline Test  (Parse -> Chunk -> Embed -> Store -> Query)")
+if args.production:
+    print("AISALES -- Excel Ingestion  (Parse -> Chunk -> Embed -> Store)")
+    print("  Mode: PRODUCTION  →  real 'cost_history' collection")
+else:
+    print("AISALES -- Pipeline Test  (Parse -> Chunk -> Embed -> Store -> Query)")
+    print("  Mode: TEST  →  temporary collections (cleaned up after)")
 print(SEP)
 print(f"  Running tests : {sorted(RUN)}")
+print(f"  Excel file    : {XLSX_FILE}")
 print(f"  CHUNK_SIZE    : {CHUNK_SIZE}")
 print(f"  CHUNK_OVERLAP : {CHUNK_OVERLAP}")
 print()
@@ -119,7 +154,7 @@ else:
         splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
         chunks = splitter.split_documents(raw_docs)
         print(f"  Chunks produced : {len(chunks)}")
-        _print_chunks(chunks)
+        _print_chunks(chunks, max_show=None if args.all_chunks else 5)
 
         # 1c. Embed + Store
         print("Step 1c: Embedding & Storing (Ollama -> ChromaDB) ...")
@@ -164,7 +199,7 @@ else:
             print(f"  Chunks     : {len(raw_docs)}")
             print(f"  Pre-chunked: {pre_chunked}")
             print()
-            _print_chunks(raw_docs)
+            _print_chunks(raw_docs, max_show=None if args.all_chunks else 5)
 
             # 2b. Embed + Store
             print("Step 2b: Embedding & Storing (Ollama -> ChromaDB) ...")
@@ -206,6 +241,10 @@ else:
         print(f"[SKIP] {XLSX_FILE} not found.\n")
     else:
         try:
+            # Decide which collection to use
+            from backend.config import CHROMA_COLLECTION_COST
+            xlsx_collection = CHROMA_COLLECTION_COST if args.production else TEST_COLLECTION_XLSX
+
             # 3a. Parse
             print("Step 3a: Parsing (excel_parser -> structured, fallback to pandas) ...")
             raw_docs   = load_file(XLSX_FILE)
@@ -230,13 +269,20 @@ else:
             splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
             chunks = splitter.split_documents(raw_docs)
             print(f"  Chunks produced : {len(chunks)}")
-            _print_chunks(chunks)
+            _print_chunks(chunks, max_show=None if args.all_chunks else 5)
 
             # 3d. Embed + Store
-            print("Step 3d: Embedding & Storing (Ollama -> ChromaDB) ...")
-            delete_collection(TEST_COLLECTION_XLSX)
-            added  = index_file(XLSX_FILE, TEST_COLLECTION_XLSX)
-            stored = collection_count(TEST_COLLECTION_XLSX)
+            print(f"Step 3d: Embedding & Storing (Ollama -> ChromaDB) ... [{xlsx_collection}]")
+            if args.production:
+                if not args.keep:
+                    delete_collection(xlsx_collection)
+                    print(f"  Collection '{xlsx_collection}' cleared (use --keep to append).")
+                else:
+                    print(f"  Appending to existing collection '{xlsx_collection}'.")
+            else:
+                delete_collection(xlsx_collection)
+            added  = index_file(XLSX_FILE, xlsx_collection)
+            stored = collection_count(xlsx_collection)
             print(f"  Chunks added : {added}")
             print(f"  Chunks in DB : {stored}")
             print(f"  Status       : {'PASS' if added > 0 and stored == added else 'FAIL'}")
@@ -244,7 +290,7 @@ else:
 
             # 3e. Similarity search
             print("Step 3e: Similarity Search ...")
-            _similarity_search(get_collection(TEST_COLLECTION_XLSX), [
+            _similarity_search(get_collection(xlsx_collection), [
                 "labor hours and cost estimate",
                 "software development work",
                 "total project cost",
@@ -259,9 +305,15 @@ else:
 # ─────────────────────────────────────────────────────────────────────────────
 print(SEP)
 print("Cleanup -- removing temporary test collections ...")
-for _coll in [TEST_COLLECTION_TXT, TEST_COLLECTION_DOCX, TEST_COLLECTION_XLSX]:
+_cleanup = [TEST_COLLECTION_TXT, TEST_COLLECTION_DOCX]
+if not args.production:
+    _cleanup.append(TEST_COLLECTION_XLSX)
+for _coll in _cleanup:
     delete_collection(_coll)
     print(f"  Deleted: {_coll}")
+if args.production:
+    from backend.config import CHROMA_COLLECTION_COST
+    print(f"  Kept  : {CHROMA_COLLECTION_COST}  (production collection — not deleted)")
 print()
 print("All tests completed.")
 print(SEP)

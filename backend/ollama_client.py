@@ -24,6 +24,7 @@ def _get_vram_gb() -> float:
 
 
 def recommend_model() -> str:
+
     """Choose the best Ollama LLM model based on detected VRAM."""
     vram = _get_vram_gb()
     if vram >= 22:
@@ -35,7 +36,7 @@ def recommend_model() -> str:
     else:
         return "qwen2.5:7b-instruct-q4_K_M"
 
-
+ 
 def is_ollama_running() -> bool:
     try:
         r = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3)
