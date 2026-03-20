@@ -9,8 +9,8 @@ Run from project root:
 
 Ingest Excel into the REAL cost_history collection (for actual cost estimation):
     python test_pipeline.py --production
-    python test_pipeline.py --production --xlsx path/to/my_file.xlsx
-    python test_pipeline.py --production --xlsx path/to/file1.xlsx --keep
+    python test_pipeline.py --production --dir data/documents/cost_history
+    python test_pipeline.py --production --dir data/documents/cost_history --keep
 
 Requires:
   - Ollama running with nomic-embed-text pulled
@@ -41,9 +41,11 @@ parser.add_argument(
     help="Store Excel into the REAL cost_history collection (no cleanup). Implies --tests 3.",
 )
 parser.add_argument(
-    "--xlsx", default=None,
-    metavar="PATH",
-    help="Override the Excel file path used in TEST 3 (default: laskentapohja.xlsx).",
+    "--dir", default=None,
+    metavar="DIR",
+    help="Directory containing .xlsx/.xls files for TEST 3. "
+         "Production default: data/documents/cost_history  "
+         "Test default: data/raw/offer_calculations",
 )
 parser.add_argument(
     "--keep", action="store_true",
@@ -61,7 +63,14 @@ RUN = set(args.tests)
 # ─────────────────────────────────────────────────────────────────────────────
 TXT_FILE  = Path("transcript_example.txt")
 DOCX_FILE = Path("data/raw/offers/offer_Military_Communication_Helmet_Project_2026-02-23.docx")
-XLSX_FILE = Path(args.xlsx) if args.xlsx else Path("data/raw/offer_calculations/laskentapohja.xlsx")
+
+if args.dir:
+    XLSX_DIR = Path(args.dir)
+elif args.production:
+    from backend.config import COST_HISTORY_DIR
+    XLSX_DIR = COST_HISTORY_DIR
+else:
+    XLSX_DIR = Path("data/raw/offer_calculations")
 
 # Temporary test collections — cleaned up at the end
 TEST_COLLECTION_TXT  = "test_txt_pipeline"
@@ -123,7 +132,7 @@ else:
     print("  Mode: TEST  →  temporary collections (cleaned up after)")
 print(SEP)
 print(f"  Running tests : {sorted(RUN)}")
-print(f"  Excel file    : {XLSX_FILE}")
+print(f"  Excel dir     : {XLSX_DIR}")
 print(f"  CHUNK_SIZE    : {CHUNK_SIZE}")
 print(f"  CHUNK_OVERLAP : {CHUNK_OVERLAP}")
 print()
@@ -228,76 +237,103 @@ else:
 
 
 # ===========================================================================
-# TEST 3 -- Excel file (.xlsx) -- structured + fallback parser
+# TEST 3 -- Excel files (.xlsx/.xls) from a directory
 # ===========================================================================
 if 3 not in RUN:
     print(f"{SEP}\nTEST 3 -- [SKIPPED]\n")
 else:
     print(SEP)
-    print("TEST 3 -- Excel file (.xlsx)  --  laskentapohja.xlsx")
+    print(f"TEST 3 -- Excel files (.xlsx/.xls)  --  {XLSX_DIR}")
     print(SEP)
 
-    if not XLSX_FILE.exists():
-        print(f"[SKIP] {XLSX_FILE} not found.\n")
+    if not XLSX_DIR.exists() or not XLSX_DIR.is_dir():
+        print(f"[SKIP] Directory not found: {XLSX_DIR}\n")
     else:
-        try:
-            # Decide which collection to use
-            from backend.config import CHROMA_COLLECTION_COST
-            xlsx_collection = CHROMA_COLLECTION_COST if args.production else TEST_COLLECTION_XLSX
-
-            # 3a. Parse
-            print("Step 3a: Parsing (excel_parser -> structured, fallback to pandas) ...")
-            raw_docs   = load_file(XLSX_FILE)
-            structured = any(d.metadata.get("structured") for d in raw_docs)
-            sheets     = [d.metadata.get("sheet", "?") for d in raw_docs]
-            print(f"  File            : {XLSX_FILE.name}")
-            print(f"  Documents loaded: {len(raw_docs)}")
-            print(f"  Structured parse: {structured}")
-            print(f"  Sheets          : {sheets}")
+        xlsx_files = sorted(XLSX_DIR.glob("*.xlsx")) + sorted(XLSX_DIR.glob("*.xls"))
+        if not xlsx_files:
+            print(f"[SKIP] No .xlsx/.xls files found in {XLSX_DIR}\n")
+        else:
+            print(f"  Found {len(xlsx_files)} file(s):")
+            for f in xlsx_files:
+                print(f"    {f.name}")
             print()
 
-            # 3b. Parsed text snippets per sheet
-            print("Step 3b: Parsed text snippets ...")
-            for d in raw_docs:
-                sheet = d.metadata.get("sheet", "?")
-                print(f"  Sheet={sheet!r}  {len(d.page_content)} chars")
-                print(f"    {_truncate(d.page_content, 200)!r}")
-            print()
+            try:
+                from backend.config import CHROMA_COLLECTION_COST
+                xlsx_collection = CHROMA_COLLECTION_COST if args.production else TEST_COLLECTION_XLSX
 
-            # 3c. Chunk
-            print("Step 3c: Chunking (RecursiveCharacterTextSplitter) ...")
-            splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-            chunks = splitter.split_documents(raw_docs)
-            print(f"  Chunks produced : {len(chunks)}")
-            _print_chunks(chunks, max_show=None if args.all_chunks else 5)
-
-            # 3d. Embed + Store
-            print(f"Step 3d: Embedding & Storing (Ollama -> ChromaDB) ... [{xlsx_collection}]")
-            if args.production:
-                if not args.keep:
-                    delete_collection(xlsx_collection)
-                    print(f"  Collection '{xlsx_collection}' cleared (use --keep to append).")
+                # Clear collection once before processing all files
+                if args.production:
+                    if not args.keep:
+                        delete_collection(xlsx_collection)
+                        print(f"  Collection '{xlsx_collection}' cleared (use --keep to append).")
+                    else:
+                        print(f"  Appending to existing collection '{xlsx_collection}'.")
                 else:
-                    print(f"  Appending to existing collection '{xlsx_collection}'.")
-            else:
-                delete_collection(xlsx_collection)
-            added  = index_file(XLSX_FILE, xlsx_collection)
-            stored = collection_count(xlsx_collection)
-            print(f"  Chunks added : {added}")
-            print(f"  Chunks in DB : {stored}")
-            print(f"  Status       : {'PASS' if added > 0 and stored == added else 'FAIL'}")
-            print()
+                    delete_collection(xlsx_collection)
+                print()
 
-            # 3e. Similarity search
-            print("Step 3e: Similarity Search ...")
-            _similarity_search(get_collection(xlsx_collection), [
-                "labor hours and cost estimate",
-                "software development work",
-                "total project cost",
-            ])
+                total_chunks = 0
+                splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
 
-        except Exception as e:
-            print(f"[ERROR] {type(e).__name__}: {e}\n")
+                for file_idx, XLSX_FILE in enumerate(xlsx_files, 1):
+                    file_sep = "-" * 60
+                    print(f"{file_sep}")
+                    print(f"  [{file_idx}/{len(xlsx_files)}] {XLSX_FILE.name}")
+                    print(f"{file_sep}")
+
+                    # 3a. Parse
+                    print("  Step 3a: Parsing ...")
+                    raw_docs   = load_file(XLSX_FILE)
+                    if not raw_docs:
+                        print("    [SKIP] No documents parsed from this file.\n")
+                        continue
+                    structured = any(d.metadata.get("structured") for d in raw_docs)
+                    sheets     = [d.metadata.get("sheet", "?") for d in raw_docs]
+                    print(f"    Documents loaded: {len(raw_docs)}")
+                    print(f"    Structured parse: {structured}")
+                    print(f"    Sheets          : {sheets}")
+
+                    # 3b. Parsed text snippets
+                    print("  Step 3b: Parsed text snippets ...")
+                    for d in raw_docs:
+                        sheet = d.metadata.get("sheet", "?")
+                        print(f"    Sheet={sheet!r}  {len(d.page_content)} chars")
+                        print(f"      {_truncate(d.page_content, 180)!r}")
+                    print()
+
+                    # 3c. Chunk
+                    print("  Step 3c: Chunking ...")
+                    chunks = splitter.split_documents(raw_docs)
+                    print(f"    Chunks produced : {len(chunks)}")
+                    _print_chunks(chunks, max_show=None if args.all_chunks else 3)
+
+                    # 3d. Embed + Store (append — collection already cleared above)
+                    print(f"  Step 3d: Embedding & Storing → [{xlsx_collection}]")
+                    added = index_file(XLSX_FILE, xlsx_collection)
+                    total_chunks += added
+                    print(f"    Chunks added : {added}")
+                    print(f"    Status       : {'PASS' if added > 0 else 'FAIL — 0 chunks stored'}")
+                    print()
+
+                stored = collection_count(xlsx_collection)
+                print(file_sep)
+                print(f"  SUMMARY")
+                print(f"    Files processed   : {len(xlsx_files)}")
+                print(f"    Total chunks added: {total_chunks}")
+                print(f"    Chunks in DB now  : {stored}")
+                print()
+
+                # 3e. Similarity search across all ingested files
+                print("  Step 3e: Similarity Search (across all ingested files) ...")
+                _similarity_search(get_collection(xlsx_collection), [
+                    "labor hours and cost estimate",
+                    "software development work",
+                    "total project cost",
+                ])
+
+            except Exception as e:
+                print(f"[ERROR] {type(e).__name__}: {e}\n")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
