@@ -129,7 +129,7 @@ def _similarity_search(collection, queries):
 try:
     from backend.ingestion.document_loader import load_file, index_file
     from backend.vectorstore.chroma_client import get_collection, delete_collection, collection_count
-    from backend.config import CHUNK_SIZE, CHUNK_OVERLAP
+    from backend.config import CHUNK_SIZE, CHUNK_OVERLAP, CHROMA_COLLECTION_BOILER, CHROMA_COLLECTION_CV, CHROMA_COLLECTION_COST
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 except ImportError as exc:
     sys.exit(
@@ -139,115 +139,186 @@ except ImportError as exc:
 
 print(SEP)
 if args.production:
-    print("AISALES -- Excel Ingestion  (Parse -> Chunk -> Embed -> Store)")
-    print("  Mode: PRODUCTION  →  real 'cost_history' collection")
+    print("AISALES -- Production Ingestion  (Parse -> Chunk -> Embed -> Store)")
+    print("  Mode: PRODUCTION  →  real collections, data persisted")
 else:
     print("AISALES -- Pipeline Test  (Parse -> Chunk -> Embed -> Store -> Query)")
     print("  Mode: TEST  →  temporary collections (cleaned up after)")
 print(SEP)
 print(f"  Running tests : {sorted(RUN)}")
-print(f"  Excel dir     : {XLSX_DIR}")
+print(f"  TXT/MD  dir   : {TXT_DIR}")
+print(f"  DOCX/PDF dir  : {DOCX_DIR}")
+print(f"  XLSX dir      : {XLSX_DIR}")
 print(f"  CHUNK_SIZE    : {CHUNK_SIZE}")
 print(f"  CHUNK_OVERLAP : {CHUNK_OVERLAP}")
 print()
 
 
 # ===========================================================================
-# TEST 1 -- Plain-text (.txt)
+# TEST 1 -- Plain-text / Markdown (.txt, .md) from a directory
 # ===========================================================================
 if 1 not in RUN:
     print(f"{SEP}\nTEST 1 -- [SKIPPED]\n")
 else:
     print(SEP)
-    print("TEST 1 -- Plain-text (.txt)  --  transcript_example.txt")
+    print(f"TEST 1 -- TXT/MD files  --  {TXT_DIR}")
     print(SEP)
 
-    if not TXT_FILE.exists():
-        print(f"[SKIP] {TXT_FILE} not found.\n")
+    if not TXT_DIR.exists() or not TXT_DIR.is_dir():
+        print(f"[SKIP] Directory not found: {TXT_DIR}\n")
     else:
-        # 1a. Parse
-        print("Step 1a: Parsing ...")
-        raw_docs = load_file(TXT_FILE)
-        print(f"  Raw documents loaded : {len(raw_docs)}")
-        print(f"  Total characters     : {sum(len(d.page_content) for d in raw_docs)}")
-        print()
+        txt_files = sorted(TXT_DIR.glob("*.txt")) + sorted(TXT_DIR.glob("*.md"))
+        if not txt_files:
+            print(f"[SKIP] No .txt/.md files found in {TXT_DIR}\n")
+        else:
+            print(f"  Found {len(txt_files)} file(s):")
+            for f in txt_files:
+                print(f"    {f.name}")
+            print()
 
-        # 1b. Chunk
-        print("Step 1b: Chunking (RecursiveCharacterTextSplitter) ...")
-        splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-        chunks = splitter.split_documents(raw_docs)
-        print(f"  Chunks produced : {len(chunks)}")
-        _print_chunks(chunks, max_show=None if args.all_chunks else 5)
+            txt_collection = CHROMA_COLLECTION_BOILER if args.production else TEST_COLLECTION_TXT
 
-        # 1c. Embed + Store
-        print("Step 1c: Embedding & Storing (Ollama -> ChromaDB) ...")
-        delete_collection(TEST_COLLECTION_TXT)
-        added  = index_file(TXT_FILE, TEST_COLLECTION_TXT)
-        stored = collection_count(TEST_COLLECTION_TXT)
-        print(f"  Chunks added : {added}")
-        print(f"  Chunks in DB : {stored}")
-        print(f"  Status       : {'PASS' if added > 0 and stored == added else 'FAIL'}")
-        print()
+            if args.production:
+                if not args.keep:
+                    delete_collection(txt_collection)
+                    print(f"  Collection '{txt_collection}' cleared (use --keep to append).")
+                else:
+                    print(f"  Appending to existing collection '{txt_collection}'.")
+            else:
+                delete_collection(txt_collection)
+            print()
 
-        # 1d. Similarity search
-        print("Step 1d: Similarity Search ...")
-        _similarity_search(get_collection(TEST_COLLECTION_TXT), [
-            "project goals and requirements",
-            "delivery schedule and timeline",
-            "pricing and costs",
-        ])
+            total_chunks = 0
+            splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+
+            for file_idx, txt_file in enumerate(txt_files, 1):
+                file_sep = "-" * 60
+                print(file_sep)
+                print(f"  [{file_idx}/{len(txt_files)}] {txt_file.name}")
+                print(file_sep)
+
+                print("  Step 1a: Parsing ...")
+                raw_docs = load_file(txt_file)
+                if not raw_docs:
+                    print("    [SKIP] No content parsed.\n")
+                    continue
+                print(f"    Characters: {sum(len(d.page_content) for d in raw_docs)}")
+
+                print("  Step 1b: Chunking ...")
+                chunks = splitter.split_documents(raw_docs)
+                print(f"    Chunks produced: {len(chunks)}")
+                _print_chunks(chunks, max_show=None if args.all_chunks else 3)
+
+                print(f"  Step 1c: Embedding & Storing → [{txt_collection}]")
+                added = index_file(txt_file, txt_collection)
+                total_chunks += added
+                print(f"    Chunks added : {added}")
+                print(f"    Status       : {'PASS' if added > 0 else 'FAIL — 0 chunks stored'}")
+                print()
+
+            stored = collection_count(txt_collection)
+            print(file_sep)
+            print(f"  SUMMARY")
+            print(f"    Files processed   : {len(txt_files)}")
+            print(f"    Total chunks added: {total_chunks}")
+            print(f"    Chunks in DB now  : {stored}")
+            print()
+
+            print("  Step 1d: Similarity Search (across all ingested files) ...")
+            _similarity_search(get_collection(txt_collection), [
+                "project goals and requirements",
+                "delivery schedule and timeline",
+                "pricing and costs",
+            ])
 
 
 # ===========================================================================
-# TEST 2 -- Word document (.docx) -- Docling HybridChunker
+# TEST 2 -- Word / PDF / PowerPoint (.docx, .pptx, .pdf) from a directory
 # ===========================================================================
 if 2 not in RUN:
     print(f"{SEP}\nTEST 2 -- [SKIPPED]\n")
 else:
     print(SEP)
-    print("TEST 2 -- Word document (.docx)  --  Docling HybridChunker")
+    print(f"TEST 2 -- DOCX/PPTX/PDF files  --  {DOCX_DIR}")
     print(SEP)
     print("NOTE: Docling imports PyTorch/transformers -- first run can take 1-3 min.")
     print()
 
-    if not DOCX_FILE.exists():
-        print(f"[SKIP] {DOCX_FILE} not found.\n")
+    if not DOCX_DIR.exists() or not DOCX_DIR.is_dir():
+        print(f"[SKIP] Directory not found: {DOCX_DIR}\n")
     else:
-        try:
-            # 2a. Parse + pre-chunk via Docling
-            print("Step 2a: Parsing & Chunking with Docling HybridChunker ...")
-            raw_docs    = load_file(DOCX_FILE)
-            pre_chunked = raw_docs[0].metadata.get("pre_chunked", False) if raw_docs else False
-            print(f"  File       : {DOCX_FILE.name}")
-            print(f"  Chunks     : {len(raw_docs)}")
-            print(f"  Pre-chunked: {pre_chunked}")
-            print()
-            _print_chunks(raw_docs, max_show=None if args.all_chunks else 5)
-
-            # 2b. Embed + Store
-            print("Step 2b: Embedding & Storing (Ollama -> ChromaDB) ...")
-            delete_collection(TEST_COLLECTION_DOCX)
-            added  = index_file(DOCX_FILE, TEST_COLLECTION_DOCX)
-            stored = collection_count(TEST_COLLECTION_DOCX)
-            print(f"  Chunks added : {added}")
-            print(f"  Chunks in DB : {stored}")
-            print(f"  Status       : {'PASS' if added > 0 and stored == added else 'FAIL'}")
+        docx_files = (
+            sorted(DOCX_DIR.glob("*.docx")) +
+            sorted(DOCX_DIR.glob("*.pptx")) +
+            sorted(DOCX_DIR.glob("*.pdf"))
+        )
+        if not docx_files:
+            print(f"[SKIP] No .docx/.pptx/.pdf files found in {DOCX_DIR}\n")
+        else:
+            print(f"  Found {len(docx_files)} file(s):")
+            for f in docx_files:
+                print(f"    {f.name}")
             print()
 
-            # 2c. Similarity search
-            print("Step 2c: Similarity Search ...")
-            _similarity_search(get_collection(TEST_COLLECTION_DOCX), [
+            docx_collection = CHROMA_COLLECTION_CV if args.production else TEST_COLLECTION_DOCX
+
+            if args.production:
+                if not args.keep:
+                    delete_collection(docx_collection)
+                    print(f"  Collection '{docx_collection}' cleared (use --keep to append).")
+                else:
+                    print(f"  Appending to existing collection '{docx_collection}'.")
+            else:
+                delete_collection(docx_collection)
+            print()
+
+            total_chunks = 0
+
+            for file_idx, docx_file in enumerate(docx_files, 1):
+                file_sep = "-" * 60
+                print(file_sep)
+                print(f"  [{file_idx}/{len(docx_files)}] {docx_file.name}")
+                print(file_sep)
+
+                try:
+                    print("  Step 2a: Parsing & Chunking (Docling HybridChunker) ...")
+                    raw_docs    = load_file(docx_file)
+                    if not raw_docs:
+                        print("    [SKIP] No content parsed.\n")
+                        continue
+                    pre_chunked = raw_docs[0].metadata.get("pre_chunked", False)
+                    print(f"    Chunks     : {len(raw_docs)}")
+                    print(f"    Pre-chunked: {pre_chunked}")
+                    _print_chunks(raw_docs, max_show=None if args.all_chunks else 3)
+
+                    print(f"  Step 2b: Embedding & Storing → [{docx_collection}]")
+                    added = index_file(docx_file, docx_collection)
+                    total_chunks += added
+                    print(f"    Chunks added : {added}")
+                    print(f"    Status       : {'PASS' if added > 0 else 'FAIL — 0 chunks stored'}")
+                    print()
+
+                except KeyboardInterrupt:
+                    print("\n[INTERRUPTED] Docling aborted (Ctrl+C).")
+                    print("  Re-run with: python test_pipeline.py --tests 1 3  (skip DOCX)\n")
+                    break
+                except Exception as e:
+                    print(f"    [ERROR/SKIP] {type(e).__name__}: {e}\n")
+
+            stored = collection_count(docx_collection)
+            print(file_sep)
+            print(f"  SUMMARY")
+            print(f"    Files processed   : {len(docx_files)}")
+            print(f"    Total chunks added: {total_chunks}")
+            print(f"    Chunks in DB now  : {stored}")
+            print()
+
+            print("  Step 2c: Similarity Search (across all ingested files) ...")
+            _similarity_search(get_collection(docx_collection), [
                 "project goals and objectives",
                 "timetable and schedule",
                 "payment terms and conditions",
             ])
-
-        except KeyboardInterrupt:
-            print("\n[INTERRUPTED] Docling import was aborted (Ctrl+C).")
-            print("  Re-run with: python test_pipeline.py --tests 1 3  (skip DOCX)\n")
-        except Exception as e:
-            print(f"[ERROR/SKIP] {type(e).__name__}: {e}")
-            print("  Docling test skipped -- broken dependency or import error.\n")
 
 
 # ===========================================================================
@@ -355,15 +426,14 @@ else:
 # ─────────────────────────────────────────────────────────────────────────────
 print(SEP)
 print("Cleanup -- removing temporary test collections ...")
-_cleanup = [TEST_COLLECTION_TXT, TEST_COLLECTION_DOCX]
+_cleanup = []
 if not args.production:
-    _cleanup.append(TEST_COLLECTION_XLSX)
+    _cleanup = [TEST_COLLECTION_TXT, TEST_COLLECTION_DOCX, TEST_COLLECTION_XLSX]
 for _coll in _cleanup:
     delete_collection(_coll)
     print(f"  Deleted: {_coll}")
 if args.production:
-    from backend.config import CHROMA_COLLECTION_COST
-    print(f"  Kept  : {CHROMA_COLLECTION_COST}  (production collection — not deleted)")
+    print(f"  Kept: {CHROMA_COLLECTION_BOILER}, {CHROMA_COLLECTION_CV}, {CHROMA_COLLECTION_COST}  (production — not deleted)")
 print()
 print("All tests completed.")
 print(SEP)
