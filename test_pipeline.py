@@ -1,20 +1,32 @@
 """
 Full pipeline test: Parse → Chunk → Embed → Store → Query
-Tests .txt, .docx, and .xlsx file types separately.
+Tests .txt/.md, .docx/.pptx/.pdf, and .xlsx/.xls files from directories.
 
-Run from project root:
-    python test_pipeline.py              # all tests (temp collections, cleaned up after)
+── TEST MODE (temporary collections, cleaned up after) ──────────────────────
+    python test_pipeline.py              # all tests
     python test_pipeline.py --tests 1 3  # only TXT + XLSX (skips slow Docling)
     python test_pipeline.py --tests 2    # only DOCX (Docling must be working)
 
-Ingest Excel into the REAL cost_history collection (for actual cost estimation):
-    python test_pipeline.py --production
-    python test_pipeline.py --production --dir data/documents/cost_history
-    python test_pipeline.py --production --dir data/documents/cost_history --keep
+── PRODUCTION MODE (real collections, data persisted) ───────────────────────
+    python test_pipeline.py --production            # all 3, real dirs & collections
+    python test_pipeline.py --production --tests 3  # Excel only
+    python test_pipeline.py --production --tests 1  # TXT/MD only → boilerplate
+    python test_pipeline.py --production --tests 2  # DOCX/PDF only → cv_database
+    python test_pipeline.py --production --keep     # append, don't clear first
+
+── OVERRIDE DIRECTORIES ─────────────────────────────────────────────────────
+    python test_pipeline.py --production --txt-dir  path/to/txt_files
+    python test_pipeline.py --production --docx-dir path/to/docx_files
+    python test_pipeline.py --production --dir      path/to/excel_files
+
+Production defaults:
+    TEST 1 (TXT/MD)       → data/documents/boilerplate/  → boilerplate collection
+    TEST 2 (DOCX/PDF/PPTX)→ data/documents/cvs/          → cv_database collection
+    TEST 3 (XLSX/XLS)     → data/documents/cost_history/ → cost_history collection
 
 Requires:
   - Ollama running with nomic-embed-text pulled
-  - docling installed (for .docx / TEST 2)
+  - docling installed (for .docx/.pdf/.pptx / TEST 2)
   - pandas + openpyxl installed (for .xlsx / TEST 3)
 
 NOTE: TEST 2 imports Docling which pulls in PyTorch/transformers.
@@ -30,47 +42,49 @@ parser = argparse.ArgumentParser(description="AISALES pipeline test")
 parser.add_argument(
     "--tests", nargs="+", type=int, choices=[1, 2, 3], default=[1, 2, 3],
     metavar="N",
-    help="Which tests to run (1=TXT, 2=DOCX/Docling, 3=XLSX). Default: all.",
+    help="Which tests to run (1=TXT/MD, 2=DOCX/PDF/PPTX, 3=XLSX). Default: all.",
 )
 parser.add_argument(
     "--all-chunks", action="store_true",
-    help="Print every chunk in full (no count limit, no content truncation). Useful for inspecting Excel extraction.",
+    help="Print every chunk in full (no count limit, no content truncation).",
 )
 parser.add_argument(
     "--production", action="store_true",
-    help="Store Excel into the REAL cost_history collection (no cleanup). Implies --tests 3.",
+    help="Store into REAL collections (no cleanup). Uses real document dirs by default.",
 )
 parser.add_argument(
-    "--dir", default=None,
-    metavar="DIR",
-    help="Directory containing .xlsx/.xls files for TEST 3. "
+    "--txt-dir", default=None, metavar="DIR",
+    help="Directory of .txt/.md files for TEST 1. "
+         "Production default: data/documents/boilerplate  "
+         "Test default: data/documents/boilerplate",
+)
+parser.add_argument(
+    "--docx-dir", default=None, metavar="DIR",
+    help="Directory of .docx/.pptx/.pdf files for TEST 2. "
+         "Production default: data/documents/cvs  "
+         "Test default: data/documents/cvs",
+)
+parser.add_argument(
+    "--dir", default=None, metavar="DIR",
+    help="Directory of .xlsx/.xls files for TEST 3. "
          "Production default: data/documents/cost_history  "
          "Test default: data/raw/offer_calculations",
 )
 parser.add_argument(
     "--keep", action="store_true",
-    help="Do NOT clear the collection before ingesting (append mode). Only affects --production.",
+    help="Do NOT clear collections before ingesting (append mode). Only affects --production.",
 )
 args = parser.parse_args()
-
-# --production forces TEST 3 only
-if args.production:
-    args.tests = [3]
 RUN = set(args.tests)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# File paths
+# Resolve directories
 # ─────────────────────────────────────────────────────────────────────────────
-TXT_FILE  = Path("transcript_example.txt")
-DOCX_FILE = Path("data/raw/offers/offer_Military_Communication_Helmet_Project_2026-02-23.docx")
+from backend.config import BOILERPLATE_DIR, CV_DIR, COST_HISTORY_DIR  # noqa: E402
 
-if args.dir:
-    XLSX_DIR = Path(args.dir)
-elif args.production:
-    from backend.config import COST_HISTORY_DIR
-    XLSX_DIR = COST_HISTORY_DIR
-else:
-    XLSX_DIR = Path("data/raw/offer_calculations")
+TXT_DIR  = Path(args.txt_dir)  if args.txt_dir  else BOILERPLATE_DIR
+DOCX_DIR = Path(args.docx_dir) if args.docx_dir else CV_DIR
+XLSX_DIR = Path(args.dir)      if args.dir       else (COST_HISTORY_DIR if args.production else Path("data/raw/offer_calculations"))
 
 # Temporary test collections — cleaned up at the end
 TEST_COLLECTION_TXT  = "test_txt_pipeline"
