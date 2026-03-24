@@ -64,7 +64,12 @@ def list_local_models() -> list[str]:
     try:
         r = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5)
         data = r.json()
-        return [m["name"] for m in data.get("models", [])]
+        # Ollama <0.3 used "name", ≥0.3 uses "model" — support both
+        return [
+            m.get("name") or m.get("model", "")
+            for m in data.get("models", [])
+            if m.get("name") or m.get("model")
+        ]
     except Exception:
         return []
 

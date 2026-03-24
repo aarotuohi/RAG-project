@@ -90,7 +90,10 @@ def generate_section8(project: ProjectData, language: str = "en") -> dict:
     """
     llm = get_llm()
 
-    query = f"{project.project_name} {project.goals} {project.required_expertise} {project.constraints}"
+    query = (
+        f"{project.project_name} {project.goals} {project.required_expertise} "
+        f"{project.constraints} {project.material_deliverables}"
+    )
     candidate_docs = _retrieve_candidate_cvs(query)
 
     if not candidate_docs:
@@ -119,6 +122,7 @@ def generate_section8(project: ProjectData, language: str = "en") -> dict:
         )
         expert_summaries += f"\n{i+1}. {name} | Title: {title} | Skills: {skills}\n"
 
+    lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     ranking_prompt = _RANKING_PROMPT.format(
         project_name=project.project_name or "New Project",
         goals=project.goals or "Not specified",
@@ -126,7 +130,7 @@ def generate_section8(project: ProjectData, language: str = "en") -> dict:
         categories_needed=project.required_expertise or "General",
         constraints=project.constraints or "None",
         expert_summaries=expert_summaries[:5000],
-    )
+    ) + f"\n\n{lang_note}"
     ranking_response = llm.invoke(ranking_prompt)
     selected = _extract_selected(ranking_response)
 

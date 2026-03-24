@@ -50,13 +50,40 @@ class CostStep:
     name: str
     category: str         # one of WORK_CATEGORIES
     hourly_rate: float    # effective hourly rate after discount
-    hours: float          # hours per person
-    persons: int
+    hours: float          # total estimated hours
+    persons: int = 1
     total: float = field(init=False)
 
     def __post_init__(self):
-        """Calculate the total cost from effective_rate × hours_per_person × persons."""
+        """Calculate the total cost from hourly_rate × hours × persons."""
         self.total = round(self.hourly_rate * self.hours * self.persons, 2)
+
+
+@dataclass
+class CostSubStep:
+    name: str
+    category: str
+    hourly_rate: float
+    hours: float          # hours per person
+    persons: int = 1
+    total: float = field(init=False)
+
+    def __post_init__(self):
+        self.total = round(self.hourly_rate * self.hours * self.persons, 2)
+
+
+@dataclass
+class CostStepGroup:
+    step_id: str          # e.g. "STEP 1"
+    name: str
+    output: str           # deliverable / goal of this step
+    sub_steps: list["CostSubStep"] = field(default_factory=list)
+    total_hours: float = field(init=False)
+    total_cost: float = field(init=False)
+
+    def __post_init__(self):
+        self.total_hours = round(sum(s.hours * s.persons for s in self.sub_steps), 2)
+        self.total_cost = round(sum(s.total for s in self.sub_steps), 2)
 
 
 def _infer_category(text: str) -> str:

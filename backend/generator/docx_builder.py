@@ -14,7 +14,7 @@ from docx.oxml import OxmlElement
 
 from backend.config import TEMPLATES_DIR, OUTPUTS_DIR
 from backend.chains.extraction_chain import ProjectData
-from backend.ingestion.excel_parser import CostStep
+from backend.ingestion.excel_parser import CostStepGroup
 
 
 def _add_heading(doc: Document, text: str, level: int):
@@ -29,13 +29,13 @@ def _add_paragraph(doc: Document, text: str, bold: bool = False, italic: bool = 
     return p
 
 
-def _add_cost_table(doc: Document, steps: list[CostStep], grand_total: float):
-    """Add the cost estimation table to the document."""
-    table = doc.add_table(rows=1, cols=7)
+def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: float, project_output: str = ""):
+    """Add the hierarchical cost estimation table to the document."""
+    table = doc.add_table(rows=1, cols=4)
     table.style = "Table Grid"
 
     # Header row
-    headers = ["Step", "Description", "Category", "Rate [€/h]", "Hours [h]", "Persons", "Total [€]"]
+    headers = ["Step", "Hourly cost [\u20ac/h]", "Hours estimation [h]", "Cost estimation [\u20ac]"]
     hdr_cells = table.rows[0].cells
     for i, hdr in enumerate(headers):
         hdr_cells[i].text = hdr
@@ -43,28 +43,41 @@ def _add_cost_table(doc: Document, steps: list[CostStep], grand_total: float):
             for run in paragraph.runs:
                 run.bold = True
 
-    # Data rows
-    for step in steps:
-        row_cells = table.add_row().cells
-        row_cells[0].text = step.step_id
-        row_cells[1].text = step.name
-        row_cells[2].text = step.category
-        row_cells[3].text = f"{step.hourly_rate:,.2f}"
-        row_cells[4].text = f"{step.hours:,.1f}"
-        row_cells[5].text = str(step.persons)
-        row_cells[6].text = f"{step.total:,.2f}"
+    for grp_idx, step_group in enumerate(steps, 1):
+        try:
+            step_num = step_group.step_id.split()[-1]
+        except Exception:
+            step_num = str(grp_idx)
 
-    # Grand total row — includes both total hours and total cost
-    total_hours = sum(step.hours for step in steps)
+        # Main step row — bold, shows totals
+        main_row = table.add_row().cells
+        main_row[0].text = f"{step_group.step_id}: {step_group.name}"
+        main_row[1].text = ""
+        main_row[2].text = f"{step_group.total_hours:,.1f}"
+        main_row[3].text = f"{step_group.total_cost:,.2f}"
+        for cell in [main_row[0], main_row[2], main_row[3]]:
+            for para in cell.paragraphs:
+                for run in para.runs:
+                    run.bold = True
+
+        # Sub-step rows
+        for sub_idx, sub in enumerate(step_group.sub_steps, 1):
+            sub_row = table.add_row().cells
+            sub_row[0].text = f"  {step_num}.{sub_idx}  {sub.name}"
+            sub_row[1].text = f"{sub.hourly_rate:,.2f}"
+            sub_row[2].text = f"{sub.hours * sub.persons:,.1f}"
+            sub_row[3].text = f"{sub.total:,.2f}"
+
+    # Grand total row
+    total_hours = sum(sg.total_hours for sg in steps)
     total_row = table.add_row().cells
-    total_row[0].text = ""
+    total_row[0].text = "Estimated work expenses overall"
+    if project_output:
+        total_row[0].add_paragraph(f"Output: {project_output}")
     total_row[1].text = ""
-    total_row[2].text = ""
-    total_row[3].text = "TOTAL"
-    total_row[4].text = f"{total_hours:,.1f} h"
-    total_row[5].text = ""
-    total_row[6].text = f"{grand_total:,.2f} €"
-    for cell in [total_row[3], total_row[4], total_row[6]]:
+    total_row[2].text = f"{total_hours:,.1f} h"
+    total_row[3].text = f"{grand_total:,.2f} \u20ac"
+    for cell in [total_row[0], total_row[2], total_row[3]]:
         for para in cell.paragraphs:
             for run in para.runs:
                 run.bold = True
@@ -147,9 +160,9 @@ def build_offer_document(
     s2 = sections.get("section2", {})
     _add_paragraph(doc, s2.get("description_text", ""))
     doc.add_paragraph()
-    steps: list[CostStep] = s2.get("steps", [])
+    steps = s2.get("steps", [])
     if steps:
-        _add_cost_table(doc, steps, s2.get("grand_total", 0.0))
+        _add_cost_table(doc, steps, s2.get("grand_total", 0.0), s2.get("project_output", ""))
     doc.add_paragraph()
 
     # ── Section 3 ─────────────────────────────────────────────────────────────

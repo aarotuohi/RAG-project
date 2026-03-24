@@ -416,7 +416,7 @@ export default function NewOfferTab({ lang }: Props) {
                               <td style={{ padding: '4px 8px', textAlign: 'right' }}>{s.hours}</td>
                               <td style={{ padding: '4px 8px', textAlign: 'right' }}>{s.hourly_rate}€</td>
                               <td style={{ padding: '4px 8px', textAlign: 'right' }}>{s.persons}</td>
-                              <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 600 }}>{s.total_cost?.toFixed(0)}€</td>
+                              <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 600 }}>{s.total?.toFixed(0)}€</td>
                             </tr>
                           ))}
                         </tbody>

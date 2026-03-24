@@ -116,8 +116,8 @@ def test_cost_estimation(project_data=None, language: str = "en"):
     if steps:
         total = 0.0
         for s in steps:
-            cost = getattr(s, "total_cost", 0) if hasattr(s, "total_cost") else (
-                s.get("total_cost", 0) if isinstance(s, dict) else 0
+            cost = getattr(s, "total", 0) if hasattr(s, "total") else (
+                s.get("total", 0) if isinstance(s, dict) else 0
             )
             total += cost
             name = getattr(s, "name", "") if not isinstance(s, dict) else s.get("name", "")

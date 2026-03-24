@@ -14,7 +14,7 @@ from backend.ollama_client import get_llm
 from backend.vectorstore.chroma_client import get_collection
 from backend.config import CHROMA_COLLECTION_COST, WORK_CATEGORIES
 from backend.chains.extraction_chain import ProjectData
-from backend.ingestion.excel_parser import CostStep
+from backend.ingestion.excel_parser import CostSubStep, CostStepGroup
 
 
 _ESTIMATION_PROMPT = PromptTemplate.from_template(
@@ -50,11 +50,17 @@ Return ONLY a JSON array — no explanation, no markdown, no totals row:
 [
   {{
     "step_id": "STEP 1",
-    "name": "step description in the same language as the project name",
-    "category": "one of the work categories above",
-    "hourly_rate": <exact number from historical data>,
-    "hours": <estimated hours per person>,
-    "persons": <integer>
+    "name": "main step name in the same language as the project name",
+    "output": "short description of what this step delivers",
+    "sub_steps": [
+      {{
+        "name": "sub-step description",
+        "category": "one of the work categories above",
+        "hourly_rate": <exact number from historical data>,
+        "hours": <estimated hours per person for this sub-step>,
+        "persons": <number of people needed for this sub-step>
+      }}
+    ]
   }},
   ...
 ]"""
@@ -118,15 +124,19 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
     Returns:
       {
         'description_text': str,
-        'steps': [CostStep, ...],
+        'steps': [CostStepGroup, ...],
         'grand_total': float,
         'payment_type': str,
+        'project_output': str,
       }
     """
     lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     llm = get_llm()
 
-    description_query = f"{project.project_name} {project.goals} {project.required_expertise}"
+    description_query = (
+        f"{project.project_name} {project.goals} {project.required_expertise} "
+        f"{project.constraints} {project.material_deliverables} {project.payment_type}"
+    )
     historical_data = _retrieve_similar_projects(description_query)
 
     # --- Step 1: Generate description paragraph ---
@@ -151,31 +161,51 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
     raw = llm.invoke(est_prompt)
     cleaned = _clean_json(raw)
 
-    steps: list[CostStep] = []
+    step_groups: list[CostStepGroup] = []
     try:
-        step_list = json.loads(cleaned)
-        for s in step_list:
+        parsed = json.loads(cleaned)
+        # LLM sometimes wraps the array: {"steps": [...]} or {"cost_steps": [...]}
+        if isinstance(parsed, dict):
+            parsed = next(
+                (v for v in parsed.values() if isinstance(v, list)),
+                []
+            )
+        step_list = parsed if isinstance(parsed, list) else []
+        for i, s in enumerate(step_list):
+            if not isinstance(s, dict):
+                continue
             try:
-                cs = CostStep(
-                    step_id=str(s.get("step_id", f"STEP {len(steps)+1}")),
+                sub_steps: list[CostSubStep] = []
+                for ss in s.get("sub_steps", []):
+                    if not isinstance(ss, dict):
+                        continue
+                    try:
+                        sub_steps.append(CostSubStep(
+                            name=str(ss.get("name", "")),
+                            category=str(ss.get("category", "Services")),
+                            hourly_rate=float(ss.get("hourly_rate", 0)),
+                            hours=float(ss.get("hours", 0)),
+                            persons=int(ss.get("persons", 1)),
+                        ))
+                    except Exception:
+                        continue
+                step_groups.append(CostStepGroup(
+                    step_id=str(s.get("step_id", f"STEP {i+1}")),
                     name=str(s.get("name", "")),
-                    category=str(s.get("category", "Services")),
-                    hourly_rate=float(s.get("hourly_rate", 0)),
-                    hours=float(s.get("hours", 0)),
-                    persons=int(s.get("persons", 1)),
-                )
-                steps.append(cs)
+                    output=str(s.get("output", "")),
+                    sub_steps=sub_steps,
+                ))
             except Exception:
                 continue
     except json.JSONDecodeError:
         pass
 
-    # Grand total computed purely in Python — LLM never touches the math
-    grand_total = round(sum(s.total for s in steps), 2)
+    grand_total = round(sum(sg.total_cost for sg in step_groups), 2)
 
     return {
         "description_text": description_text,
-        "steps": steps,
+        "steps": step_groups,
         "grand_total": grand_total,
         "payment_type": project.payment_type or "hourly",
+        "project_output": project.goals or "",
     }
