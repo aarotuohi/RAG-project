@@ -401,24 +401,31 @@ export default function NewOfferTab({ lang }: Props) {
                         <thead>
                           <tr style={{ background: '#f1f5f9' }}>
                             <th style={{ textAlign: 'left', padding: '4px 8px' }}>Step</th>
-                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Category</th>
-                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Hours</th>
-                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Rate</th>
-                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Persons</th>
-                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Total</th>
+                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Hourly cost [€/h]</th>
+                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Hours estimation [h]</th>
+                            <th style={{ textAlign: 'right', padding: '4px 8px' }}>Cost estimation [€]</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {(testResult.result?.steps || []).map((s: any, i: number) => (
-                            <tr key={i} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                              <td style={{ padding: '4px 8px' }}>{s.name}</td>
-                              <td style={{ padding: '4px 8px', color: '#6b7280' }}>{s.category}</td>
-                              <td style={{ padding: '4px 8px', textAlign: 'right' }}>{s.hours}</td>
-                              <td style={{ padding: '4px 8px', textAlign: 'right' }}>{s.hourly_rate}€</td>
-                              <td style={{ padding: '4px 8px', textAlign: 'right' }}>{s.persons}</td>
-                              <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 600 }}>{s.total?.toFixed(0)}€</td>
-                            </tr>
-                          ))}
+                          {(testResult.result?.steps || []).map((s: any, i: number) => {
+                            const stepNum = s.step_id?.split(' ').pop() ?? (i + 1)
+                            return [
+                              <tr key={`main-${i}`} style={{ borderBottom: '1px solid #e5e7eb', background: '#f8fafc' }}>
+                                <td style={{ padding: '5px 8px', fontWeight: 700 }}>{s.step_id}: {s.name}</td>
+                                <td style={{ padding: '5px 8px' }} />
+                                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{s.total_hours?.toFixed(1)}</td>
+                                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{s.total_cost?.toFixed(2)}€</td>
+                              </tr>,
+                              ...(s.sub_steps || []).map((ss: any, j: number) => (
+                                <tr key={`sub-${i}-${j}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  <td style={{ padding: '3px 8px 3px 20px', color: '#374151' }}>{stepNum}.{j + 1} &nbsp;{ss.name}</td>
+                                  <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{ss.hourly_rate?.toFixed(2)}</td>
+                                  <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{((ss.hours ?? 0) * (ss.persons ?? 1)).toFixed(1)}</td>
+                                  <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{ss.total?.toFixed(2)}€</td>
+                                </tr>
+                              )),
+                            ]
+                          })}
                         </tbody>
                       </table>
                     </div>
