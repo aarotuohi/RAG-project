@@ -135,7 +135,9 @@ def generate(req: GenerateRequest):
 
     def event_stream():
         for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.document_language):
-            yield json.dumps(event) + "\n"
+            # Pad to >1KB so TCP/proxy buffers flush immediately on every event
+            line = json.dumps(event) + "\n"
+            yield line + (" " * max(0, 1024 - len(line))) + "\n"
 
     return StreamingResponse(
         event_stream(),

@@ -189,8 +189,10 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
                         ))
                     except Exception:
                         continue
+                raw_id = str(s.get("step_id", "")).strip()
+                step_id = raw_id if raw_id else f"STEP {i+1}"
                 step_groups.append(CostStepGroup(
-                    step_id=str(s.get("step_id", f"STEP {i+1}")),
+                    step_id=step_id,
                     name=str(s.get("name", "")),
                     output=str(s.get("output", "")),
                     sub_steps=sub_steps,

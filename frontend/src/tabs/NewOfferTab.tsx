@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { t, type Lang } from '../i18n'
 
 interface Props {
@@ -75,6 +75,7 @@ export default function NewOfferTab({ lang }: Props) {
   const [testingSection, setTestingSection] = useState<'section1' | 'section2' | null>(null)
   const [testResult, setTestResult] = useState<{ section: string; result: any } | null>(null)
   const [testError, setTestError] = useState('')
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const set = (name: string, value: string) => setProject(p => ({ ...p, [name]: value }))
 
@@ -148,40 +149,56 @@ export default function NewOfferTab({ lang }: Props) {
   }
 
   const startGeneration = async () => {
+    const controller = new AbortController()
+    abortControllerRef.current = controller
     setGenerating(true)
     setEvents([])
     setResult(null)
     setStep('generating')
 
-    const resp = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project, enable_web_search: webSearch, export_pdf: exportPdf, document_language: documentLanguage }),
-    })
+    try {
+      const resp = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, enable_web_search: webSearch, export_pdf: exportPdf, document_language: documentLanguage }),
+        signal: controller.signal,
+      })
 
-    const reader = resp.body!.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
+      const reader = resp.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-      for (const line of lines) {
-        if (!line.trim()) continue
-        try {
-          const ev: ProgressEvent = JSON.parse(line)
-          setEvents(prev => [...prev, ev])
-          if (ev.status === 'done' && ev.docx) {
-            setResult({ docx: ev.docx, pdf: ev.pdf || undefined })
-            setStep('done')
-          }
-        } catch { /* ignore */ }
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const ev: ProgressEvent = JSON.parse(line)
+            setEvents(prev => [...prev, ev])
+            if (ev.status === 'done' && ev.docx) {
+              setResult({ docx: ev.docx, pdf: ev.pdf || undefined })
+              setStep('done')
+            }
+          } catch { /* ignore */ }
+        }
       }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') throw err
     }
     setGenerating(false)
+  }
+
+  const cancelGeneration = () => {
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
+    setGenerating(false)
+    setEvents([])
+    setResult(null)
+    setStep('upload')
   }
 
   const download = (path: string) => {
@@ -478,7 +495,18 @@ export default function NewOfferTab({ lang }: Props) {
       {/* Step 3: Generating */}
       {(step === 'generating' || step === 'done') && (
         <div className="card">
-          <h2>{step === 'done' ? t('offer_generated', lang) : t('generating', lang)}</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h2 style={{ margin: 0 }}>{step === 'done' ? t('offer_generated', lang) : t('generating', lang)}</h2>
+            {step === 'generating' && (
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: 13 }}
+                onClick={cancelGeneration}
+              >
+                ✕ {t('back_transcript', lang)}
+              </button>
+            )}
+          </div>
           <ul className="progress-list">
             {SECTIONS_ORDER.map(sectionKey => {
               const SECTION_LABELS = getSectionLabels(lang)
