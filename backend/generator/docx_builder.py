@@ -19,8 +19,57 @@ from backend.ingestion.excel_parser import CostStepGroup
 OFFER_FONT = "Campton Book"
 
 
+def _set_default_font(doc: Document, font_name: str):
+    """Apply font_name as the document-wide default for all styles and docDefaults."""
+    # Document-level run defaults (w:docDefaults/w:rPrDefault)
+    doc_defaults = doc.styles.element.find(qn('w:docDefaults'))
+    if doc_defaults is not None:
+        rpr_default = doc_defaults.find(qn('w:rPrDefault'))
+        if rpr_default is None:
+            rpr_default = OxmlElement('w:rPrDefault')
+            doc_defaults.append(rpr_default)
+        rpr = rpr_default.find(qn('w:rPr'))
+        if rpr is None:
+            rpr = OxmlElement('w:rPr')
+            rpr_default.append(rpr)
+        rfonts = rpr.find(qn('w:rFonts'))
+        if rfonts is None:
+            rfonts = OxmlElement('w:rFonts')
+            rpr.insert(0, rfonts)
+        rfonts.set(qn('w:ascii'), font_name)
+        rfonts.set(qn('w:hAnsi'), font_name)
+        rfonts.set(qn('w:cs'), font_name)
+    # Normal style + headings
+    for style_name in ['Normal'] + [f'Heading {i}' for i in range(1, 10)]:
+        try:
+            doc.styles[style_name].font.name = font_name
+        except Exception:
+            pass
+
+
 def _add_heading(doc: Document, text: str, level: int):
     doc.add_heading(text, level=level)
+
+
+def _clear_table_borders(table) -> None:
+    """Remove all visible borders from a DOCX table."""
+    tbl = table._tbl
+    tblPr = tbl.find(qn('w:tblPr'))
+    if tblPr is None:
+        tblPr = OxmlElement('w:tblPr')
+        tbl.insert(0, tblPr)
+    tblBorders = tblPr.find(qn('w:tblBorders'))
+    if tblBorders is not None:
+        tblPr.remove(tblBorders)
+    tblBorders = OxmlElement('w:tblBorders')
+    for side in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+        el = OxmlElement(f'w:{side}')
+        el.set(qn('w:val'), 'none')
+        el.set(qn('w:sz'), '0')
+        el.set(qn('w:space'), '0')
+        el.set(qn('w:color'), 'auto')
+        tblBorders.append(el)
+    tblPr.append(tblBorders)
 
 
 def _add_paragraph(doc: Document, text: str, bold: bool = False, italic: bool = False):
@@ -28,22 +77,32 @@ def _add_paragraph(doc: Document, text: str, bold: bool = False, italic: bool = 
     run = p.add_run(text)
     run.bold = bold
     run.italic = italic
+    run.font.name = OFFER_FONT
     return p
 
 
+def _set_cell_text(cell, text: str, bold: bool = False, align_right: bool = False, font_name: str = OFFER_FONT):
+    """Set cell text with optional bold and right-alignment."""
+    para = cell.paragraphs[0]
+    para.clear()
+    run = para.add_run(text)
+    run.bold = bold
+    run.font.name = font_name
+    if align_right:
+        para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+
 def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: float, project_output: str = ""):
-    """Add the hierarchical cost estimation table to the document."""
+    """Add the cost estimation table without borders, matching the offer layout."""
     table = doc.add_table(rows=1, cols=4)
     table.style = "Table Grid"
+    _clear_table_borders(table)
 
     # Header row
     headers = ["Step", "Hourly cost [\u20ac/h]", "Hours estimation [h]", "Cost estimation [\u20ac]"]
     hdr_cells = table.rows[0].cells
     for i, hdr in enumerate(headers):
-        hdr_cells[i].text = hdr
-        for paragraph in hdr_cells[i].paragraphs:
-            for run in paragraph.runs:
-                run.bold = True
+        _set_cell_text(hdr_cells[i], hdr, bold=True, align_right=(i > 0))
 
     for grp_idx, step_group in enumerate(steps, 1):
         try:
@@ -51,79 +110,36 @@ def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: floa
         except Exception:
             step_num = str(grp_idx)
 
-        # Main step row — bold, shows totals
+        # Step-group header row — bold, shows totals
         main_row = table.add_row().cells
-        main_row[0].text = f"{step_group.step_id}: {step_group.name}"
-        main_row[1].text = ""
-        main_row[2].text = f"{step_group.total_hours:,.1f}"
-        main_row[3].text = f"{step_group.total_cost:,.2f}"
-        for cell in [main_row[0], main_row[2], main_row[3]]:
-            for para in cell.paragraphs:
-                for run in para.runs:
-                    run.bold = True
+        _set_cell_text(main_row[0], f"{step_group.step_id}: {step_group.name}", bold=True)
+        _set_cell_text(main_row[1], "", bold=True, align_right=True)
+        _set_cell_text(main_row[2], f"{step_group.total_hours:,.1f}", bold=True, align_right=True)
+        _set_cell_text(main_row[3], f"{step_group.total_cost:,.2f}\u20ac", bold=True, align_right=True)
 
         # Sub-step rows
         for sub_idx, sub in enumerate(step_group.sub_steps, 1):
             sub_row = table.add_row().cells
-            sub_row[0].text = f"  {step_num}.{sub_idx}  {sub.name}"
-            sub_row[1].text = f"{sub.hourly_rate:,.2f}"
-            sub_row[2].text = f"{sub.hours * sub.persons:,.1f}"
-            sub_row[3].text = f"{sub.total:,.2f}"
+            _set_cell_text(sub_row[0], f"  {step_num}.{sub_idx}  {sub.name}")
+            _set_cell_text(sub_row[1], f"{sub.hourly_rate:,.2f}", align_right=True)
+            _set_cell_text(sub_row[2], f"{sub.hours * sub.persons:,.1f}", align_right=True)
+            _set_cell_text(sub_row[3], f"{sub.total:,.2f}\u20ac", align_right=True)
 
     # Grand total row
     total_hours = sum(sg.total_hours for sg in steps)
     total_row = table.add_row().cells
-    total_row[0].text = "Estimated work expenses overall"
+    _set_cell_text(total_row[0], "Grand Total:", bold=True)
     if project_output:
         total_row[0].add_paragraph(f"Output: {project_output}")
-    total_row[1].text = ""
-    total_row[2].text = f"{total_hours:,.1f} h"
-    total_row[3].text = f"{grand_total:,.2f} \u20ac"
-    for cell in [total_row[0], total_row[2], total_row[3]]:
-        for para in cell.paragraphs:
-            for run in para.runs:
-                run.bold = True
-
-
-_HEADINGS: dict[str, list[str]] = {
-    "en": [
-        "OFFER",
-        "1. Background and Goals",
-        "2. Project Implementation and Cost Estimation",
-        "3. Timetable",
-        "4. Project Restrictions and Responsibilities",
-        "5. Material Transformation",
-        "6. Documentation",
-        "7. Quality Assurance",
-        "8. Project Team",
-        "9. Generic Terms of Delivery",
-        "10. Payment Terms",
-        "11. Contact Information",
-        "12. Attachments",
-    ],
-    "fi": [
-        "TARJOUS",
-        "1. Tausta ja tavoitteet",
-        "2. Projektin toteutus ja kustannusarvio",
-        "3. Aikataulu",
-        "4. Projektin rajoitukset ja vastuut",
-        "5. Aineistomuunnos",
-        "6. Dokumentaatio",
-        "7. Laadunvarmistus",
-        "8. Projektitiimi",
-        "9. Yleiset toimitusehdot",
-        "10. Maksuehdot",
-        "11. Yhteystiedot",
-        "12. Liitteet",
-    ],
-}
+    _set_cell_text(total_row[1], "", bold=True, align_right=True)
+    _set_cell_text(total_row[2], f"{total_hours:,.1f} h", bold=True, align_right=True)
+    _set_cell_text(total_row[3], f"{grand_total:,.2f} \u20ac", bold=True, align_right=True)
 
 
 def build_offer_document(
     project: ProjectData,
     sections: dict,
     salesperson_contact: dict | None = None,
-    language: str = "en",
 ) -> Path:
     """
     Build the complete offer .docx file.
@@ -152,8 +168,7 @@ def build_offer_document(
             section.left_margin = Cm(3)
             section.right_margin = Cm(2.5)
 
-    h = _HEADINGS.get(language, _HEADINGS["en"])
-    #_set_default_font(doc, OFFER_FONT)
+    _set_default_font(doc, OFFER_FONT)
     doc_date = project.document_date or date.today().isoformat()
 
     # ── Header block ─────────────────────────────────────────────────────────
@@ -166,10 +181,10 @@ def build_offer_document(
 
     # ── OFFER heading ─────────────────────────────────────────────────────────
     offer_heading = doc.add_paragraph()
-    offer_run = offer_heading.add_run(h[0])
+    offer_run = offer_heading.add_run("OFFER")
     offer_run.bold = True
     offer_run.font.size = Pt(28)
-    #offer_run.font.name = OFFER_FONT
+    offer_run.font.name = OFFER_FONT
     offer_heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
     doc.add_paragraph()
 
@@ -188,7 +203,7 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 1 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, h[1], 1)
+    _add_heading(doc, "1. Background and Goals", 1)
     s1 = sections.get("section1", {})
     _add_paragraph(doc, s1.get("company_background", ""))
     doc.add_paragraph()
@@ -196,7 +211,7 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 2 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, h[2], 1)
+    _add_heading(doc, "2. Project Implementation and Cost Estimation", 1)
     s2 = sections.get("section2", {})
     _add_paragraph(doc, s2.get("description_text", ""))
     doc.add_paragraph()
@@ -206,32 +221,32 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 3 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, h[3], 1)
+    _add_heading(doc, "3. Timetable", 1)
     _add_paragraph(doc, sections.get("section3", ""))
     doc.add_paragraph()
 
     # ── Section 4 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, h[4], 1)
+    _add_heading(doc, "4. Project Restrictions and Responsibilities", 1)
     _add_paragraph(doc, sections.get("section4", ""))
     doc.add_paragraph()
 
     # ── Section 5 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, h[5], 1)
+    _add_heading(doc, "5. Material Transformation", 1)
     _add_paragraph(doc, sections.get("section5", ""))
     doc.add_paragraph()
 
     # ── Section 6 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, h[6], 1)
+    _add_heading(doc, "6. Documentation", 1)
     _add_paragraph(doc, sections.get("section6", ""))
     doc.add_paragraph()
 
     # ── Section 7 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, h[7], 1)
+    _add_heading(doc, "7. Quality Assurance", 1)
     _add_paragraph(doc, sections.get("section7", ""))
     doc.add_paragraph()
 
     # ── Section 8 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, h[8], 1)
+    _add_heading(doc, "8. Project Team", 1)
     s8 = sections.get("section8", {})
     _add_paragraph(doc, s8.get("intro_text", ""))
     for expert in s8.get("experts", []):
@@ -241,7 +256,7 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 9 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, h[9], 1)
+    _add_heading(doc, "9. Generic Terms of Delivery", 1)
     _add_paragraph(doc, sections.get("section9", ""))
     doc.add_paragraph()    
     if sections.get("section9_payment"):
@@ -249,7 +264,7 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 10 — Payment Terms ────────────────────────────────────────────
-    _add_heading(doc, h[10], 1)
+    _add_heading(doc, "10. Payment Terms", 1)
     _doc_date = date.fromisoformat(project.document_date) if project.document_date else date.today()
     _deadline = (_doc_date + timedelta(weeks=2)).strftime("%d.%m.%Y")
     payment_terms = (
@@ -263,7 +278,7 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 11 — Contact Information ──────────────────────────────────────
-    _add_heading(doc, h[11], 1)
+    _add_heading(doc, "11. Contact Information", 1)
     _add_paragraph(doc, sections.get("section10_text", ""))
     doc.add_paragraph()
     if salesperson_contact:
@@ -277,7 +292,7 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 12 — Attachments ──────────────────────────────────────────────
-    _add_heading(doc, h[12], 1)
+    _add_heading(doc, "12. Attachments", 1)
     attachments = [
         "1. General terms and conditions",
         "2. Consulting service contract terms",
