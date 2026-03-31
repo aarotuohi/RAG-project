@@ -92,7 +92,7 @@ def generate_offer(
         sections["section10_text"] = generate_contact_text(project, language=language, salesperson_contact=salesperson_contact)
 
         yield {"status": "progress", "section": "docx", "message": "Assembling DOCX document…"}
-        docx_path = build_offer_document(project, sections, salesperson_contact)
+        docx_path = build_offer_document(project, sections, salesperson_contact, language=language)
 
         pdf_path = None
         if export_pdf:
@@ -111,7 +111,9 @@ def generate_offer(
         }
 
     except Exception as e:
-        yield {"status": "error", "section": "unknown", "message": str(e)}
+        # Use the last in-progress section so the error dot appears in the UI
+        last_section = list(sections.keys())[-1] if sections else "thank_you"
+        yield {"status": "error", "section": last_section, "message": str(e)}
 
 
 def regenerate_section(

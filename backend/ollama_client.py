@@ -8,7 +8,8 @@ import requests
 import platform
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 
-from backend.config import OLLAMA_BASE_URL, OLLAMA_LLM_MODEL, OLLAMA_EMBED_MODEL
+import backend.config as _cfg
+from backend.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL
 
 
 def _get_vram_gb() -> float:
@@ -24,14 +25,19 @@ def _get_vram_gb() -> float:
 
 
 def recommend_model() -> str:
+    """Choose the best Ollama LLM model based on detected VRAM.
 
-    """Choose the best Ollama LLM model based on detected VRAM."""
+    Conservative thresholds include a ~20% safety margin above model weight size:
+      14b q4_K_M needs ~9 GB  → require 10 GB
+      32b q4_K_M needs ~20 GB → require 24 GB
+      70b q4_K_M needs ~40 GB → require 48 GB
+    """
     vram = _get_vram_gb()
-    if vram >= 22:
+    if vram >= 48:
         return "llama3.3:70b-instruct-q4_K_M"
-    elif vram >= 14:
+    elif vram >= 24:
         return "qwen2.5:32b-instruct-q4_K_M"
-    elif vram >= 7:
+    elif vram >= 10:
         return "qwen2.5:14b-instruct-q4_K_M"
     else:
         return "qwen2.5:7b-instruct-q4_K_M"
@@ -89,9 +95,13 @@ _embeddings: OllamaEmbeddings | None = None
 
 def get_llm(model: str | None = None) -> OllamaLLM:
     global _llm
-    resolved = model or OLLAMA_LLM_MODEL
+    # Use live cfg value so main.py startup model selection takes effect
+    resolved = model or _cfg.OLLAMA_LLM_MODEL
     if _llm is None or _llm.model != resolved:
-        _llm = OllamaLLM(model=resolved, base_url=OLLAMA_BASE_URL, temperature=0.2)
+        # num_ctx cap prevents Ollama from allocating a massive KV-cache
+        # (Qwen2.5 defaults to 128k context which exhausts VRAM and causes
+        # "llama runner process has terminated" even when model weights fit)
+        _llm = OllamaLLM(model=resolved, base_url=OLLAMA_BASE_URL, temperature=0.2, num_ctx=8192)
     return _llm
 
 

@@ -12,7 +12,7 @@ from langchain_core.prompts import PromptTemplate
 
 from backend.ollama_client import get_llm
 from backend.vectorstore.chroma_client import get_collection
-from backend.config import CHROMA_COLLECTION_COST, WORK_CATEGORIES
+from backend.config import CHROMA_COLLECTION_COST, WORK_CATEGORIES, DEFAULT_HOURLY_RATES
 from backend.chains.extraction_chain import ProjectData
 from backend.ingestion.excel_parser import CostSubStep, CostStepGroup
 
@@ -36,13 +36,19 @@ HISTORICAL PROJECTS — REAL DATA FROM PREVIOUS CALCULATIONS
 {historical_data}
 
 ════════════════════════════════════════
+DEFAULT HOURLY RATES (use these when no historical rate is available)
+════════════════════════════════════════
+{default_rates}
+
+════════════════════════════════════════
 INSTRUCTIONS
 ════════════════════════════════════════
 1. Study the historical projects above carefully.
 2. Identify which historical steps are most similar to what the new project needs.
-3. Use the EXACT hourly rates (Rate: X€/h) from the historical data for matching work types — do NOT invent rates.
-4. Scale hours up or down based on project complexity compared to historical examples.
-5. Add any steps the new project needs that don't appear in history, using nearby category rates as reference.
+3. Prefer EXACT hourly rates from the historical data for matching work types.
+4. If no historical rate exists for a work type, use the default rates above — NEVER output 0.
+5. Scale hours up or down based on project complexity compared to historical examples.
+6. Add any steps the new project needs that don't appear in history.
 
 Work categories available: {categories}
 
@@ -56,7 +62,7 @@ Return ONLY a JSON array — no explanation, no markdown, no totals row:
       {{
         "name": "sub-step description",
         "category": "one of the work categories above",
-        "hourly_rate": <exact number from historical data>,
+        "hourly_rate": <number from historical data or default rates — never 0>,
         "hours": <estimated hours per person for this sub-step>,
         "persons": <number of people needed for this sub-step>
       }}
@@ -67,15 +73,14 @@ Return ONLY a JSON array — no explanation, no markdown, no totals row:
 )
 
 _DESCRIPTION_PROMPT = PromptTemplate.from_template(
-    """Write a professional 2-3 sentence paragraph for a sales offer document describing 
-the project implementation approach. Mention whether it is hour-based or fixed-price.
+    """Write exactly one professional sentence for a sales offer document describing the project implementation approach. Mention whether it is hour-based or fixed-price.
 
 Project name: {project_name}
 Goals: {goals}
 Payment type: {payment_type}
 Material deliverables: {material_deliverables}
 
-Implementation paragraph:"""
+One sentence:"""
 )
 
 
@@ -149,6 +154,9 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
     description_text = llm.invoke(desc_prompt).strip()
 
     # --- Step 2: Generate structured cost estimate ---
+    default_rates_text = "\n".join(
+        f"  {cat}: {rate}€/h" for cat, rate in DEFAULT_HOURLY_RATES.items()
+    )
     est_prompt = _ESTIMATION_PROMPT.format(
         project_name=project.project_name or "New Project",
         description=f"{project.goals} {project.constraints}",
@@ -156,6 +164,7 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
         required_expertise=project.required_expertise or "Not specified",
         payment_type=project.payment_type or "hourly",
         historical_data=historical_data[:8000],
+        default_rates=default_rates_text,
         categories=", ".join(WORK_CATEGORIES),
     )
     raw = llm.invoke(est_prompt)
@@ -180,10 +189,15 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
                     if not isinstance(ss, dict):
                         continue
                     try:
+                        category = str(ss.get("category", "Services"))
+                        hourly_rate = float(ss.get("hourly_rate", 0))
+                        # Safety net: if LLM still returned 0, apply the default for the category
+                        if hourly_rate == 0:
+                            hourly_rate = DEFAULT_HOURLY_RATES.get(category, DEFAULT_HOURLY_RATES["Services"])
                         sub_steps.append(CostSubStep(
                             name=str(ss.get("name", "")),
-                            category=str(ss.get("category", "Services")),
-                            hourly_rate=float(ss.get("hourly_rate", 0)),
+                            category=category,
+                            hourly_rate=hourly_rate,
                             hours=float(ss.get("hours", 0)),
                             persons=int(ss.get("persons", 1)),
                         ))

@@ -46,6 +46,16 @@ CHUNK_OVERLAP = 80
 # Cost estimation work categories
 WORK_CATEGORIES = ["Services", "Mechanics", "Software", "Research", "Electronics", "Design"]
 
+# Default hourly rates [€/h] used when no historical data is available
+DEFAULT_HOURLY_RATES: dict[str, float] = {
+    "Services":    85.0,
+    "Mechanics":   90.0,
+    "Software":   100.0,
+    "Research":    95.0,
+    "Electronics": 95.0,
+    "Design":      90.0,
+}
+
 #Boilerplate filenames (inside BOILERPLATE_DIR) 
 BOILERPLATE_FILES = {
     "documentation": "documentation.txt",

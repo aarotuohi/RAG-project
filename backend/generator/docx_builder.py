@@ -3,7 +3,7 @@ DOCX builder — assembles the full offer document from section data.
 Uses python-docx to build the document programmatically from the offer template.
 """
 from __future__ import annotations
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from docx import Document
@@ -15,6 +15,8 @@ from docx.oxml import OxmlElement
 from backend.config import TEMPLATES_DIR, OUTPUTS_DIR
 from backend.chains.extraction_chain import ProjectData
 from backend.ingestion.excel_parser import CostStepGroup
+
+OFFER_FONT = "Campton Book"
 
 
 def _add_heading(doc: Document, text: str, level: int):
@@ -83,10 +85,45 @@ def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: floa
                 run.bold = True
 
 
+_HEADINGS: dict[str, list[str]] = {
+    "en": [
+        "OFFER",
+        "1. Background and Goals",
+        "2. Project Implementation and Cost Estimation",
+        "3. Timetable",
+        "4. Project Restrictions and Responsibilities",
+        "5. Material Transformation",
+        "6. Documentation",
+        "7. Quality Assurance",
+        "8. Project Team",
+        "9. Generic Terms of Delivery",
+        "10. Payment Terms",
+        "11. Contact Information",
+        "12. Attachments",
+    ],
+    "fi": [
+        "TARJOUS",
+        "1. Tausta ja tavoitteet",
+        "2. Projektin toteutus ja kustannusarvio",
+        "3. Aikataulu",
+        "4. Projektin rajoitukset ja vastuut",
+        "5. Aineistomuunnos",
+        "6. Dokumentaatio",
+        "7. Laadunvarmistus",
+        "8. Projektitiimi",
+        "9. Yleiset toimitusehdot",
+        "10. Maksuehdot",
+        "11. Yhteystiedot",
+        "12. Liitteet",
+    ],
+}
+
+
 def build_offer_document(
     project: ProjectData,
     sections: dict,
     salesperson_contact: dict | None = None,
+    language: str = "en",
 ) -> Path:
     """
     Build the complete offer .docx file.
@@ -115,6 +152,8 @@ def build_offer_document(
             section.left_margin = Cm(3)
             section.right_margin = Cm(2.5)
 
+    h = _HEADINGS.get(language, _HEADINGS["en"])
+    #_set_default_font(doc, OFFER_FONT)
     doc_date = project.document_date or date.today().isoformat()
 
     # ── Header block ─────────────────────────────────────────────────────────
@@ -127,9 +166,10 @@ def build_offer_document(
 
     # ── OFFER heading ─────────────────────────────────────────────────────────
     offer_heading = doc.add_paragraph()
-    offer_run = offer_heading.add_run("OFFER")
+    offer_run = offer_heading.add_run(h[0])
     offer_run.bold = True
     offer_run.font.size = Pt(28)
+    #offer_run.font.name = OFFER_FONT
     offer_heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
     doc.add_paragraph()
 
@@ -148,7 +188,7 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 1 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, "1. Background and Goals", 1)
+    _add_heading(doc, h[1], 1)
     s1 = sections.get("section1", {})
     _add_paragraph(doc, s1.get("company_background", ""))
     doc.add_paragraph()
@@ -156,7 +196,7 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 2 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, "2. Project Implementation and Cost Estimation", 1)
+    _add_heading(doc, h[2], 1)
     s2 = sections.get("section2", {})
     _add_paragraph(doc, s2.get("description_text", ""))
     doc.add_paragraph()
@@ -166,32 +206,32 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 3 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, "3. Timetable", 1)
+    _add_heading(doc, h[3], 1)
     _add_paragraph(doc, sections.get("section3", ""))
     doc.add_paragraph()
 
     # ── Section 4 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, "4. Project Restrictions and Responsibilities", 1)
+    _add_heading(doc, h[4], 1)
     _add_paragraph(doc, sections.get("section4", ""))
     doc.add_paragraph()
 
     # ── Section 5 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, "5. Material Transformation", 1)
+    _add_heading(doc, h[5], 1)
     _add_paragraph(doc, sections.get("section5", ""))
     doc.add_paragraph()
 
     # ── Section 6 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, "6. Documentation", 1)
+    _add_heading(doc, h[6], 1)
     _add_paragraph(doc, sections.get("section6", ""))
     doc.add_paragraph()
 
     # ── Section 7 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, "7. Quality Assurance", 1)
+    _add_heading(doc, h[7], 1)
     _add_paragraph(doc, sections.get("section7", ""))
     doc.add_paragraph()
 
     # ── Section 8 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, "8. Project Team", 1)
+    _add_heading(doc, h[8], 1)
     s8 = sections.get("section8", {})
     _add_paragraph(doc, s8.get("intro_text", ""))
     for expert in s8.get("experts", []):
@@ -201,14 +241,29 @@ def build_offer_document(
     doc.add_paragraph()
 
     # ── Section 9 ─────────────────────────────────────────────────────────────
-    _add_heading(doc, "9. Generic Terms of Delivery", 1)
+    _add_heading(doc, h[9], 1)
     _add_paragraph(doc, sections.get("section9", ""))
     doc.add_paragraph()    
     if sections.get("section9_payment"):
         _add_paragraph(doc, sections["section9_payment"])
     doc.add_paragraph()
-    # ── Section 10 ────────────────────────────────────────────────────────────
-    _add_heading(doc, "10. Contact Information", 1)
+
+    # ── Section 10 — Payment Terms ────────────────────────────────────────────
+    _add_heading(doc, h[10], 1)
+    _doc_date = date.fromisoformat(project.document_date) if project.document_date else date.today()
+    _deadline = (_doc_date + timedelta(weeks=2)).strftime("%d.%m.%Y")
+    payment_terms = (
+        f"Hintoihin lisätään 25,5% arvonlisävero laskutettaessa. Maksuehto 14pv netto. "
+        f"Tuntiveloitusperusteiset työt laskutetaan kuukausittain toteuman mukaan. "
+        f"Viivästyskorko on Suomen Pankin ilmoittama viitekorko lisättynä korkolain mukaisella lisäkorolla. "
+        f"Tarjouksemme on voimassa välimyyntivarauksiin {_deadline} klo 17.asti. "
+        f"Tarjouksemme on luottamuksellinen eikä sitä tule saattaa kolmannen osapuolen tietoon."
+    )
+    _add_paragraph(doc, payment_terms)
+    doc.add_paragraph()
+
+    # ── Section 11 — Contact Information ──────────────────────────────────────
+    _add_heading(doc, h[11], 1)
     _add_paragraph(doc, sections.get("section10_text", ""))
     doc.add_paragraph()
     if salesperson_contact:
@@ -221,8 +276,8 @@ def build_offer_document(
             _add_paragraph(doc, f"Phone: {salesperson_contact['phone']}")
     doc.add_paragraph()
 
-    # ── Section 11 — Attachments ──────────────────────────────────────────────
-    _add_heading(doc, "11. Attachments", 1)
+    # ── Section 12 — Attachments ──────────────────────────────────────────────
+    _add_heading(doc, h[12], 1)
     attachments = [
         "1. General terms and conditions",
         "2. Consulting service contract terms",

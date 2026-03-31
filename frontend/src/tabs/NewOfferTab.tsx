@@ -444,10 +444,19 @@ export default function NewOfferTab({ lang }: Props) {
                             ]
                           })}
                         </tbody>
+                        <tfoot>
+                          <tr style={{ borderTop: '2px solid #e5e7eb', background: '#f1f5f9' }}>
+                            <td style={{ padding: '5px 8px', fontWeight: 700 }}>{t('test_total', lang)}</td>
+                            <td />
+                            <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>
+                              {(testResult.result?.steps || []).reduce((sum: number, s: any) => sum + (s.total_hours ?? 0), 0).toFixed(1)} h
+                            </td>
+                            <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>
+                              {testResult.result?.grand_total?.toFixed(0)}€
+                            </td>
+                          </tr>
+                        </tfoot>
                       </table>
-                    </div>
-                    <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 14 }}>
-                      {t('test_total', lang)}: {testResult.result?.grand_total?.toFixed(0)}€
                     </div>
                   </>
                 )}
@@ -520,7 +529,8 @@ export default function NewOfferTab({ lang }: Props) {
                 <li key={sectionKey} className="progress-item">
                   <span className={`progress-dot ${dotClass}`} />
                   <span>{SECTION_LABELS[sectionKey] || sectionKey}</span>
-                  {ev && ev.status === 'warning' && <span style={{ fontSize: 12, color: '#c27803' }}>⚠️ {ev.message}</span>}
+                    {ev && ev.status === 'warning' && <span style={{ fontSize: 12, color: '#c27803', marginLeft: 8 }}>⚠️ {ev.message}</span>}
+                  {ev && ev.status === 'error' && <span style={{ fontSize: 12, color: '#dc2626', marginLeft: 8 }}>✕ {ev.message}</span>}
                 </li>
               )
             })}
