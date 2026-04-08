@@ -8,7 +8,7 @@ import requests
 import platform
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 
-from backend.config import OLLAMA_BASE_URL, OLLAMA_LLM_MODEL, OLLAMA_EMBED_MODEL
+from backend.config import OLLAMA_BASE_URL, OLLAMA_LLM_MODEL, OLLAMA_EMBED_MODEL, OLLAMA_NUM_CTX
 
 
 def _get_vram_gb() -> float:
@@ -87,11 +87,12 @@ _llm: OllamaLLM | None = None
 _embeddings: OllamaEmbeddings | None = None
 
 
-def get_llm(model: str | None = None) -> OllamaLLM:
+def get_llm(model: str | None = None, num_ctx: int | None = None) -> OllamaLLM:
     global _llm
     resolved = model or OLLAMA_LLM_MODEL
-    if _llm is None or _llm.model != resolved:
-        _llm = OllamaLLM(model=resolved, base_url=OLLAMA_BASE_URL, temperature=0.2)
+    ctx = num_ctx or OLLAMA_NUM_CTX
+    if _llm is None or _llm.model != resolved or _llm.num_ctx != ctx:
+        _llm = OllamaLLM(model=resolved, base_url=OLLAMA_BASE_URL, temperature=0.2, num_ctx=ctx)
     return _llm
 
 

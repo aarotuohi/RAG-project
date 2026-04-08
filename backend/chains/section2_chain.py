@@ -12,7 +12,7 @@ from langchain_core.prompts import PromptTemplate
 
 from backend.ollama_client import get_llm
 from backend.vectorstore.chroma_client import get_collection
-from backend.config import CHROMA_COLLECTION_COST, WORK_CATEGORIES
+from backend.config import CHROMA_COLLECTION_COST, WORK_CATEGORIES, CATEGORY_RATES
 from backend.chains.extraction_chain import ProjectData
 from backend.ingestion.excel_parser import CostSubStep, CostStepGroup
 
@@ -42,9 +42,14 @@ INSTRUCTIONS
 2. Identify which historical steps are most similar to what the new project needs.
 3. Use the EXACT hourly rates (Rate: X€/h) from the historical data for matching work types — do NOT invent rates.
 4. Scale hours up or down based on project complexity compared to historical examples.
-5. Add any steps the new project needs that don't appear in history, using nearby category rates as reference.
+5. Add any steps the new project needs that don't appear in history, using the standard rates below.
+6. For EVERY sub-step, use EXACTLY the standard hourly rate listed below — do NOT use any other rate.
 
-Work categories available: {categories}
+Work categories and STANDARD hourly rates (€/h):
+{categories}
+
+CRITICAL: You MUST use the nested "sub_steps" array. Do NOT place hourly_rate/hours/persons \
+directly on the step object — only inside sub_steps items.
 
 Return ONLY a JSON array — no explanation, no markdown, no totals row:
 [
@@ -156,7 +161,10 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
         required_expertise=project.required_expertise or "Not specified",
         payment_type=project.payment_type or "hourly",
         historical_data=historical_data[:8000],
-        categories=", ".join(WORK_CATEGORIES),
+        categories="\n".join(
+            f"  - {cat}: {CATEGORY_RATES[cat]}\u20ac/h"
+            for cat in WORK_CATEGORIES
+        ),
     )
     raw = llm.invoke(est_prompt)
     cleaned = _clean_json(raw)

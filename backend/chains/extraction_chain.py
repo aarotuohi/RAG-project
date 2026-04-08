@@ -1,6 +1,12 @@
 """
 Extraction chain — parses a meeting transcript into a structured ProjectData object.
 Uses Ollama with JSON mode to ensure deterministic field extraction.
+
+For long transcripts the chain uses a map-reduce strategy:
+  1. Split the transcript into overlapping chunks that fit the model's context window.
+  2. Run the extraction prompt on every chunk individually.
+  3. Merge the partial results: scalar fields take the first non-empty value;
+     narrative fields (goals, constraints, …) accumulate unique content from all chunks.
 """
 from __future__ import annotations
 import json
@@ -12,6 +18,12 @@ from langchain_core.prompts import PromptTemplate
 
 from backend.ollama_client import get_llm
 from backend.ingestion.document_loader import load_file
+
+# Characters per chunk sent to the model.
+# 5 000 chars ≈ 1 250 tokens — safely fits in an 8 192-token context window
+# alongside the prompt template (~150 tokens) and JSON response (~400 tokens).
+_CHUNK_SIZE    = 5_000
+_CHUNK_OVERLAP = 400   # overlap so nothing is lost at chunk boundaries
 
 
 @dataclass
@@ -83,17 +95,75 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
-def extract_from_transcript(transcript_text: str) -> ProjectData:
-    llm = get_llm()
-    prompt = _EXTRACTION_PROMPT.format(transcript=transcript_text[:8000])
-    raw_output = llm.invoke(prompt)
-    cleaned = _clean_json(raw_output)
+# ── Chunking helpers ──────────────────────────────────────────────────────────
 
+def _split_transcript(text: str) -> list[str]:
+    """Split *text* into overlapping chunks of at most _CHUNK_SIZE characters."""
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = start + _CHUNK_SIZE
+        chunks.append(text[start:end])
+        if end >= len(text):
+            break
+        start = end - _CHUNK_OVERLAP
+    return chunks
+
+
+_SCALAR_FIELDS = {
+    "first_name", "last_name", "company_name", "address", "postal_code",
+    "project_name", "project_number", "salesperson_name",
+    "document_date", "project_start", "project_end", "payment_type",
+}
+_TEXT_FIELDS = {
+    "goals", "constraints", "material_deliverables", "required_expertise", "other_notes",
+}
+
+
+def _merge_partials(partials: list[dict]) -> dict:
+    """
+    Merge extraction results from multiple chunks.
+    - Scalar fields: first non-empty value wins.
+    - Narrative text fields: unique contributions from every chunk are joined.
+    """
+    merged: dict[str, str] = {}
+    text_parts: dict[str, list[str]] = {f: [] for f in _TEXT_FIELDS}
+
+    for partial in partials:
+        for f in _SCALAR_FIELDS:
+            val = str(partial.get(f, "")).strip()
+            if val and f not in merged:
+                merged[f] = val
+        for f in _TEXT_FIELDS:
+            val = str(partial.get(f, "")).strip()
+            if val and val not in text_parts[f]:
+                text_parts[f].append(val)
+
+    for f, parts in text_parts.items():
+        merged[f] = " ".join(parts)
+
+    return merged
+
+
+def _extract_chunk(chunk: str) -> dict:
+    """Run the extraction prompt on a single text chunk and return a raw dict."""
+    llm = get_llm()
+    prompt = _EXTRACTION_PROMPT.format(transcript=chunk)
+    raw = llm.invoke(prompt)
     try:
-        data = json.loads(cleaned)
+        return json.loads(_clean_json(raw))
     except json.JSONDecodeError:
-        # Fallback: return empty ProjectData — user fills in manually
-        data = {}
+        return {}
+
+
+def extract_from_transcript(transcript_text: str) -> ProjectData:
+    if len(transcript_text) <= _CHUNK_SIZE:
+        # Short enough for a single pass
+        data = _extract_chunk(transcript_text)
+    else:
+        chunks = _split_transcript(transcript_text)
+        partials = [_extract_chunk(chunk) for chunk in chunks]
+        data = _merge_partials(partials)
 
     return ProjectData(**{k: v for k, v in data.items() if k in ProjectData.__dataclass_fields__})
 

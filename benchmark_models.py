@@ -75,12 +75,21 @@ Return ONLY a JSON array — no explanation, no markdown:
   {
     "step_id": "STEP 1",
     "name": "Electronics design",
-    "category": "Electronics",
-    "hourly_rate": 95,
+    "category": "Electronics design",
+    "hourly_rate": 90,
     "hours": 120,
     "persons": 2
   }
 ]
+
+Standard hourly rates (€/h):
+  - Project leading: 110€/h
+  - Research: 110€/h
+  - Service development: 90€/h
+  - Software development: 90€/h
+  - Electronics design: 90€/h
+  - Mechanics design: 90€/h
+  - Industrial design: 90€/h
 
 Project: Military Communication Helmet
 Goals: Build helmet with integrated communication hardware and firmware.

@@ -32,6 +32,7 @@ for _d in [
 OLLAMA_BASE_URL    = os.environ.get("OLLAMA_BASE_URL",   "http://localhost:11434")
 OLLAMA_LLM_MODEL   = os.environ.get("OLLAMA_LLM_MODEL",  "qwen2.5:14b-instruct-q4_K_M")   # overridden at startup
 OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+OLLAMA_NUM_CTX     = int(os.environ.get("OLLAMA_NUM_CTX", 8192))  # context window tokens sent to Ollama
 
 # ChromaDB settings 
 CHROMA_COLLECTION_COST     = "cost_history"
@@ -43,8 +44,26 @@ CHROMA_COLLECTION_CONTACTS = "sales_contacts"
 CHUNK_SIZE    = 400   # ~400 tokens — stays within nomic-embed-text's 512-token context window
 CHUNK_OVERLAP = 80
 
-# Cost estimation work categories
-WORK_CATEGORIES = ["Services", "Mechanics", "Software", "Research", "Electronics", "Design"]
+# Cost estimation work categories and their standard hourly rates (€/h)
+WORK_CATEGORIES = [
+    "Project leading",
+    "Research",
+    "Service development",
+    "Software development",
+    "Electronics design",
+    "Mechanics design",
+    "Industrial design",
+]
+
+CATEGORY_RATES: dict[str, int] = {
+    "Project leading":    110,
+    "Research":           110,
+    "Service development":  90,
+    "Software development": 90,
+    "Electronics design":   90,
+    "Mechanics design":     90,
+    "Industrial design":    90,
+}
 
 #Boilerplate filenames (inside BOILERPLATE_DIR) 
 BOILERPLATE_FILES = {

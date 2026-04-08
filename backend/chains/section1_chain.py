@@ -31,24 +31,71 @@ _SKIP_DOMAINS = {
     "crunchbase.com", "zoominfo.com",
 }
 
+# Trailing legal-entity suffixes to strip before searching / slug-building
+_LEGAL_SUFFIXES = re.compile(
+    r"\s+(oyj|oy|ab|a/s|as|ltd\.?|limited|inc\.?|corp\.?|corporation|llc|gmbh|srl|b\.?v\.?|n\.?v\.?|plc|se|kg)\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_legal_suffix(name: str) -> str:
+    """Remove trailing legal-entity suffixes (Oy, Oyj, Ltd, GmbH …) from a company name."""
+    return _LEGAL_SUFFIXES.sub("", name).strip()
+
+
+def _ascii_slug(text: str) -> str:
+    """Transliterate common accented / Nordic chars and return a hyphenated URL slug."""
+    trans = str.maketrans("äöåüéèêàâ ÄÖÅÜÉÈÊÀÂ", "aoaueeea  AOAUEEEA ")
+    text = text.translate(trans)
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def _candidate_slugs(company_name: str) -> list[str]:
+    """
+    Return URL slug candidates derived from *company_name*.
+    Tries both the stripped name and original, with hyphenated and compact forms.
+    Example: "Patria Oyj" → ["patria", "patria-oyj", "patriaoyj"]
+    """
+    stripped = _strip_legal_suffix(company_name)
+    slugs: list[str] = []
+    for name in dict.fromkeys([stripped, company_name]):   # stripped first
+        hyphen  = _ascii_slug(name)
+        compact = re.sub(r"-", "", hyphen)
+        for s in (hyphen, compact):
+            if s and s not in slugs:
+                slugs.append(s)
+    return slugs
+
 
 def _find_homepage_url(company_name: str) -> str | None:
     """Use DuckDuckGo HTML search to find the company's homepage."""
-    query = quote(f"{company_name} official website")
-    try:
-        resp = requests.get(
-            f"https://html.duckduckgo.com/html/?q={query}",
-            headers=_HEADERS, timeout=12,
-        )
-        resp.raise_for_status()
-        # DDG encodes real URLs in uddg= redirect params
-        raw_urls = re.findall(r'uddg=(https?[^&"]+)', resp.text)
-        urls = [requests.utils.unquote(u) for u in raw_urls]
-        if not urls:
-            urls = re.findall(r'class="result__url"[^>]*>\s*(https?://[^\s<"]+)', resp.text)
-    except Exception as e:
-        print(f"[section1] DuckDuckGo search failed: {e}")
-        urls = []
+    stripped = _strip_legal_suffix(company_name)
+
+    # Try multiple query variants in priority order; stop as soon as we get hits
+    queries = list(dict.fromkeys([
+        f"{stripped} official website",
+        f"{company_name} official website",
+        f"{stripped} homepage",
+        f'"{stripped}"',
+    ]))
+
+    urls: list[str] = []
+    for query in queries:
+        try:
+            resp = requests.get(
+                f"https://html.duckduckgo.com/html/?q={quote(query)}",
+                headers=_HEADERS, timeout=12,
+            )
+            resp.raise_for_status()
+            raw_urls = re.findall(r'uddg=(https?[^&"]+)', resp.text)
+            found = [requests.utils.unquote(u) for u in raw_urls]
+            if not found:
+                found = re.findall(r'class="result__url"[^>]*>\s*(https?://[^\s<"]+)', resp.text)
+            urls.extend(found)
+        except Exception as e:
+            print(f"[section1] DuckDuckGo query '{query}' failed: {e}")
+        if urls:
+            break  # found something, no need for further queries
 
     for url in urls:
         try:
@@ -60,17 +107,17 @@ def _find_homepage_url(company_name: str) -> str | None:
             continue
         return f"{parsed.scheme}://{parsed.netloc}"
 
-    # Fallback: probe common TLD patterns for the company name
-    slug = re.sub(r"[^a-z0-9]", "", company_name.lower().replace(" ", ""))
-    for tld in (".fi", ".com"):
-        candidate = f"https://www.{slug}{tld}"
-        try:
-            r = requests.head(candidate, headers=_HEADERS, timeout=5, allow_redirects=True)
-            if r.status_code < 400:
-                print(f"[section1] Fallback probe succeeded: {candidate}")
-                return candidate
-        except Exception:
-            pass
+    # Fallback: probe common TLD + slug combinations directly
+    for slug in _candidate_slugs(company_name):
+        for tld in (".fi", ".com", ".eu", ".net", ".io", ".org"):
+            candidate = f"https://www.{slug}{tld}"
+            try:
+                r = requests.head(candidate, headers=_HEADERS, timeout=5, allow_redirects=True)
+                if r.status_code < 400:
+                    print(f"[section1] Fallback probe succeeded: {candidate}")
+                    return candidate
+            except Exception:
+                continue
     return None
 
 
