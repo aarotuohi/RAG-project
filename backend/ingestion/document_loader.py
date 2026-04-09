@@ -81,20 +81,75 @@ def _load_excel_as_text(path: Path) -> list[Document]:
     step rows falls back to a plain pandas dump.
     """
     import pandas as pd
-    from backend.ingestion.excel_parser import parse_excel, parse_excel_metadata, steps_to_text
 
     # Try structured cost-estimation parse first
     try:
+        from backend.ingestion.excel_parser import (
+            parse_excel, parse_excel_metadata, steps_by_phase, grand_total,
+        )
         sheet_steps = parse_excel(path)
         if sheet_steps:
             metadata = parse_excel_metadata(path)
+
+            # Build a short project-header block prepended to every phase doc so
+            # that every chunk is self-contained and carries project context.
+            header_lines = []
+            for key, label in [
+                ("offer_number", "Offer number"), ("project_name", "Project"),
+                ("customer", "Customer"), ("salesperson", "Salesperson"),
+                ("date", "Date"), ("description", "Description"),
+            ]:
+                if metadata.get(key):
+                    header_lines.append(f"{label}: {metadata[key]}")
+            header = "\n".join(header_lines)
+
+            # Companion notes file — prepended to the first phase doc
+            companion = path.with_suffix(".txt")
+            if not companion.exists():
+                companion = path.parent / (path.stem + "_notes.txt")
+            notes_prefix = ""
+            if companion.exists():
+                notes_text = companion.read_text(encoding="utf-8", errors="replace").strip()
+                if notes_text:
+                    notes_prefix = f"Project notes:\n{notes_text}\n\n"
+
             docs = []
-            for sheet, steps in sheet_steps.items():
-                text = steps_to_text(steps, metadata=metadata)
-                docs.append(Document(
-                    page_content=text,
-                    metadata={"source": str(path), "sheet": sheet, "type": "xlsx", "structured": True},
-                ))
+            for sheet, all_steps in sheet_steps.items():
+                project_total = grand_total(all_steps)
+                phases = steps_by_phase(all_steps)
+
+                for phase_idx, (phase_name, phase_steps) in enumerate(phases.items()):
+                    # Each line: step name + optional description + numbers
+                    step_lines = []
+                    for s in phase_steps:
+                        desc_part = f" | Notes: {s.description}" if s.description else ""
+                        step_lines.append(
+                            f"  {s.name}{desc_part}"
+                            f" | Category: {s.category}"
+                            f" | Rate: {s.hourly_rate}€/h"
+                            f" | Hours: {s.hours}h"
+                            f" | Persons: {s.persons}"
+                            f" | Total: {s.total}€"
+                        )
+                    phase_total = round(sum(s.total for s in phase_steps), 2)
+
+                    prefix = (notes_prefix if phase_idx == 0 else "") + (header + "\n" if header else "")
+                    text = (
+                        f"{prefix}"
+                        f"Phase: {phase_name} | Phase total: {phase_total}€ | Project grand total: {project_total}€\n"
+                        + "\n".join(step_lines)
+                    )
+                    docs.append(Document(
+                        page_content=text,
+                        metadata={
+                            "source": str(path),
+                            "sheet": sheet,
+                            "phase": phase_name,
+                            "type": "xlsx",
+                            "structured": True,
+                            "pre_chunked": True,  # skip RecursiveCharacterTextSplitter
+                        },
+                    ))
             return docs
     except Exception:
         pass  # fall through to plain text

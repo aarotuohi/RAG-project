@@ -70,17 +70,17 @@ def generate_offer(
         sections["section5"] = generate_material(project, language=language)
 
         yield {"status": "progress", "section": "section6", "message": "Loading Section 6: Documentation (boilerplate)…"}
-        sections["section6"] = read_boilerplate("documentation")
+        sections["section6"] = read_boilerplate("documentation", language=language)
 
         yield {"status": "progress", "section": "section7", "message": "Loading Section 7: Quality Assurance (SKOL)…"}
-        sections["section7"] = read_boilerplate("quality")
+        sections["section7"] = read_boilerplate("quality", language=language)
 
         yield {"status": "progress", "section": "section8", "message": "Generating Section 8: Project Team (CV matching)…"}
         sections["section8"] = generate_section8(project, language=language)
 
         yield {"status": "progress", "section": "section9", "message": "Loading Section 9: Delivery Terms (boilerplate)…"}
-        sections["section9"] = read_boilerplate("delivery")
-        sections["section9_payment"] = read_boilerplate_dated("payment", project.document_date)
+        sections["section9"] = read_boilerplate("delivery", language=language)
+        sections["section9_payment"] = read_boilerplate_dated("payment", project.document_date, language=language)
 
         yield {"status": "progress", "section": "section10", "message": "Generating Section 10: Contact Information…"}
         salesperson_contact = _load_salesperson(project.salesperson_name)

@@ -92,6 +92,11 @@ def _set_cell_text(cell, text: str, bold: bool = False, align_right: bool = Fals
         para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
 
+def _fmt_eur(value: float) -> str:
+    """Format a Euro total as e.g. '8 000€' — no decimals, space as thousands separator."""
+    return f"{int(round(value)):,}€".replace(",", "\u00a0")
+
+
 def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: float, project_output: str = ""):
     """Add the cost estimation table without borders, matching the offer layout."""
     table = doc.add_table(rows=1, cols=4)
@@ -115,13 +120,13 @@ def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: floa
         _set_cell_text(main_row[0], f"{step_group.step_id}: {step_group.name}", bold=True)
         _set_cell_text(main_row[1], "", bold=True, align_right=True)
         _set_cell_text(main_row[2], f"{step_group.total_hours:,.1f}", bold=True, align_right=True)
-        _set_cell_text(main_row[3], f"{step_group.total_cost:,.2f}\u20ac", bold=True, align_right=True)
+        _set_cell_text(main_row[3], _fmt_eur(step_group.total_cost), bold=True, align_right=True)
 
         # Sub-step rows
         for sub_idx, sub in enumerate(step_group.sub_steps, 1):
             sub_row = table.add_row().cells
             _set_cell_text(sub_row[0], f"  {step_num}.{sub_idx}  {sub.name}")
-            _set_cell_text(sub_row[1], f"{sub.hourly_rate:,.2f}", align_right=True)
+            _set_cell_text(sub_row[1], f"{int(round(sub.hourly_rate))}", align_right=True)
             _set_cell_text(sub_row[2], f"{sub.hours * sub.persons:,.1f}", align_right=True)
             _set_cell_text(sub_row[3], f"{sub.total:,.2f}\u20ac", align_right=True)
 
@@ -133,7 +138,7 @@ def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: floa
         total_row[0].add_paragraph(f"Output: {project_output}")
     _set_cell_text(total_row[1], "", bold=True, align_right=True)
     _set_cell_text(total_row[2], f"{total_hours:,.1f} h", bold=True, align_right=True)
-    _set_cell_text(total_row[3], f"{grand_total:,.2f} \u20ac", bold=True, align_right=True)
+    _set_cell_text(total_row[3], _fmt_eur(grand_total), bold=True, align_right=True)
 
 
 def build_offer_document(

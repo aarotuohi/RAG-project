@@ -10,25 +10,46 @@ from backend.ollama_client import get_llm
 from backend.chains.extraction_chain import ProjectData
 
 
-def read_boilerplate(key: str) -> str:
+def read_boilerplate(key: str, language: str = "en") -> str:
     """
     Read a boilerplate file by key (e.g. 'quality', 'delivery', 'documentation').
-    Returns the file content or a placeholder if the file doesn't exist.
+    Picks the language-specific file first (e.g. quality_assurance_fi.txt),
+    then falls back to the English version, then returns a placeholder.
     """
-    filename = BOILERPLATE_FILES.get(key)
-    if not filename:
+    lang_map = BOILERPLATE_FILES.get(key)
+    if not lang_map:
         return f"[Boilerplate '{key}' not configured.]"
 
-    path = BOILERPLATE_DIR / filename
-    if not path.exists():
-        return (
-            f"[Boilerplate file '{filename}' not found. "
-            f"Please add it to {BOILERPLATE_DIR}]"
-        )
-    return path.read_text(encoding="utf-8", errors="ignore").strip()
+    # Try requested language, then 'en', then any available file in the map
+    candidates = list(dict.fromkeys([language, "en"] + list(lang_map.keys())))
+    for lang in candidates:
+        filename = lang_map.get(lang)
+        if not filename:
+            continue
+        path = BOILERPLATE_DIR / filename
+        if path.exists():
+            return path.read_text(encoding="utf-8", errors="ignore").strip()
+
+    # Legacy fallback: support old single-language filenames (e.g. delivery_terms.txt)
+    # so existing installations keep working without re-running setup_first_run.py.
+    legacy_names = [
+        f"{key}.txt",
+        f"{key.replace('_', '')}.txt",
+    ] + [fn.rsplit("_", 1)[0] + ".txt" for fn in lang_map.values()]
+    for name in dict.fromkeys(legacy_names):
+        path = BOILERPLATE_DIR / name
+        if path.exists():
+            return path.read_text(encoding="utf-8", errors="ignore").strip()
+
+    # Tell the user which files are expected
+    expected = ", ".join(lang_map.values())
+    return (
+        f"[Boilerplate file for '{key}' not found. "
+        f"Expected one of: {expected} in {BOILERPLATE_DIR}]"
+    )
 
 
-def read_boilerplate_dated(key: str, doc_date: str = "") -> str:
+def read_boilerplate_dated(key: str, doc_date: str = "", language: str = "en") -> str:
     """
     Like read_boilerplate() but replaces {payment_due_date} with the last
     calendar day of the month in which the document is dated.
@@ -37,7 +58,7 @@ def read_boilerplate_dated(key: str, doc_date: str = "") -> str:
     import calendar
     from datetime import date
 
-    text = read_boilerplate(key)
+    text = read_boilerplate(key, language=language)
 
     try:
         parsed = date.fromisoformat(doc_date) if doc_date else date.today()

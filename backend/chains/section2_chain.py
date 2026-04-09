@@ -90,38 +90,45 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
-def _retrieve_similar_projects(description: str, k: int = 12) -> str:
+def _retrieve_similar_projects(description: str, k: int = 20) -> str:
     """
     Retrieve the most relevant historical cost chunks from ChromaDB.
-    Fetches k chunks but deduplicates by source file so the LLM sees
-    data from multiple different projects rather than the same file repeated.
+
+    Fetches k chunks, then groups every chunk that came from the same source
+    file so the LLM sees each historical project as a coherent whole
+    (all relevant phases together) rather than isolated rows.
+    Returns at most 4 distinct projects to stay within the prompt context budget.
     """
     try:
         collection = get_collection(CHROMA_COLLECTION_COST)
         docs = collection.similarity_search(description, k=k)
 
-        # Deduplicate: keep only the best (first) chunk per source file
-        seen_sources: set[str] = set()
-        unique_docs = []
-        for d in docs:
-            src = d.metadata.get("source", "")
-            if src not in seen_sources:
-                seen_sources.add(src)
-                unique_docs.append(d)
-
-        if not unique_docs:
+        if not docs:
             return "No historical data available."
 
+        # Group chunks by source file, preserving retrieval-score order
+        # (similarity_search returns best matches first).
+        from collections import OrderedDict
+        project_chunks: OrderedDict[str, list[str]] = OrderedDict()
+        for d in docs:
+            src = d.metadata.get("source", "unknown")
+            project_chunks.setdefault(src, [])
+            # Avoid duplicate content (same chunk retrieved twice)
+            if d.page_content not in project_chunks[src]:
+                project_chunks[src].append(d.page_content)
+
         sections = []
-        for i, d in enumerate(unique_docs, 1):
-            src_name = d.metadata.get("source", "unknown")
-            # Show just the filename, not the full path
-            src_name = src_name.replace("\\", "/").split("/")[-1]
-            sections.append(f"--- Historical project {i}: {src_name} ---\n{d.page_content}")
+        for i, (src, chunks) in enumerate(project_chunks.items(), 1):
+            if i > 4:          # cap at 4 projects to keep prompt size manageable
+                break
+            src_name = src.replace("\\", "/").split("/")[-1]
+            combined = "\n\n".join(chunks)
+            sections.append(f"--- Historical project {i}: {src_name} ---\n{combined}")
 
         return "\n\n".join(sections)
     except Exception:
         return "No historical data available."
+
 
 
 def generate_section2(project: ProjectData, language: str = "en") -> dict:

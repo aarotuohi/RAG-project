@@ -65,10 +65,11 @@ CATEGORY_RATES: dict[str, int] = {
     "Industrial design":    90,
 }
 
-#Boilerplate filenames (inside BOILERPLATE_DIR) 
-BOILERPLATE_FILES = {
-    "documentation": "documentation.txt",
-    "quality":       "quality_assurance.txt",
-    "delivery":      "delivery_terms.txt",
-    "payment":       "payment_agreement.txt",
+#Boilerplate filenames (inside BOILERPLATE_DIR) — one file per key per language.
+# Lookup order: language-specific file first, then "en" fallback, then bare filename.
+BOILERPLATE_FILES: dict[str, dict[str, str]] = {
+    "documentation": {"fi": "documentation_fi.txt", "en": "documentation_en.txt"},
+    "quality":       {"fi": "quality_assurance_fi.txt", "en": "quality_assurance_en.txt"},
+    "delivery":      {"fi": "delivery_terms_fi.txt", "en": "delivery_terms_en.txt"},
+    "payment":       {"fi": "payment_agreement_fi.txt", "en": "payment_agreement_en.txt"},
 }

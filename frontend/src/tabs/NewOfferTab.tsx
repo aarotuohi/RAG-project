@@ -35,6 +35,9 @@ function getSectionLabels(lang: Lang): Record<string, string> {
   }
 }
 
+const fmtEur = (v: number) =>
+  Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + '€'
+
 const EMPTY: ProjectData = {
   first_name:'', last_name:'', company_name:'', address:'', postal_code:'',
   project_name:'', project_number:'', salesperson_name:'', document_date:'',
@@ -431,12 +434,12 @@ export default function NewOfferTab({ lang }: Props) {
                                 <td style={{ padding: '5px 8px', fontWeight: 700 }}>{s.step_id}: {s.name}</td>
                                 <td style={{ padding: '5px 8px' }} />
                                 <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{s.total_hours?.toFixed(1)}</td>
-                                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{s.total_cost?.toFixed(2)}€</td>
+                                  <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{fmtEur(s.total_cost ?? 0)}</td>
                               </tr>,
                               ...(s.sub_steps || []).map((ss: any, j: number) => (
                                 <tr key={`sub-${i}-${j}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                   <td style={{ padding: '3px 8px 3px 20px', color: '#374151' }}>{stepNum}.{j + 1} &nbsp;{ss.name}</td>
-                                  <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{ss.hourly_rate?.toFixed(2)}</td>
+                                  <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{Math.round(ss.hourly_rate ?? 0)}</td>
                                   <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{((ss.hours ?? 0) * (ss.persons ?? 1)).toFixed(1)}</td>
                                   <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{ss.total?.toFixed(2)}€</td>
                                 </tr>
@@ -452,7 +455,7 @@ export default function NewOfferTab({ lang }: Props) {
                               {(testResult.result?.steps || []).reduce((sum: number, s: any) => sum + (s.total_hours ?? 0), 0).toFixed(1)} h
                             </td>
                             <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>
-                              {testResult.result?.grand_total?.toFixed(0)}€
+                              {fmtEur(testResult.result?.grand_total ?? 0)}
                             </td>
                           </tr>
                         </tfoot>

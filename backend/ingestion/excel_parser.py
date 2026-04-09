@@ -35,6 +35,14 @@ _COL_HEADER_MAP = {
     "tuntihinta [€/h]":  "rate",
     "tuntiarvio [h]":    "total_hours",
     "hinta-arvio [€]":   "price",
+    # Description / notes columns (Finnish + English variants)
+    "kuvaus":            "description",
+    "selite":            "description",
+    "tehtävä":           "description",
+    "tehtäväkuvaus":     "description",
+    "lisätieto":         "description",
+    "notes":             "description",
+    "description":       "description",
 }
 
 # Rows whose first cell matches these patterns are not data rows
@@ -52,6 +60,7 @@ class CostStep:
     hourly_rate: float    # effective hourly rate after discount
     hours: float          # total estimated hours
     persons: int = 1
+    description: str = ""  # optional notes/description text from Excel
     total: float = field(init=False)
 
     def __post_init__(self):
@@ -153,15 +162,37 @@ def parse_excel_metadata(file_path: Path) -> dict[str, str]:
     return meta
 
 
+def _latest_rev_sheet(sheet_names: list[str]) -> str | None:
+    """
+    If any sheets are named like revA / RevB / REV_C / rev1 etc., return the
+    name of the alphabetically-last one (highest revision).  Returns None when
+    no rev-style sheets are present so the caller falls back to all sheets.
+    """
+    rev_sheets = [s for s in sheet_names if re.match(r"^rev", s.strip(), re.IGNORECASE)]
+    if not rev_sheets:
+        return None
+    # Sort by the suffix after the leading "rev" (case-insensitive) so that
+    # revA < revB < revC regardless of mixed capitalisation.
+    rev_sheets.sort(key=lambda s: re.sub(r"^rev", "", s, flags=re.IGNORECASE).lower())
+    return rev_sheets[-1]
+
+
 def parse_excel(file_path: Path) -> dict[str, list[CostStep]]:
     """
-    Parse all sheets in an Excel file.
-    Returns {sheet_name: [CostStep, ...]}
+    Parse an Excel file and return {sheet_name: [CostStep, ...]}.
+
+    When the workbook contains revision sheets (revA, revB, revC …) only the
+    latest revision (alphabetically last suffix) is parsed.  This prevents
+    outdated cost data from earlier revisions being ingested alongside the
+    current one.
     """
     result: dict[str, list[CostStep]] = {}
     xl = pd.ExcelFile(str(file_path))
 
-    for sheet_name in xl.sheet_names:
+    latest_rev = _latest_rev_sheet(xl.sheet_names)
+    sheets_to_parse = [latest_rev] if latest_rev else xl.sheet_names
+
+    for sheet_name in sheets_to_parse:
         df = xl.parse(sheet_name, header=None).fillna("")
         steps: list[CostStep] = []
 
@@ -220,6 +251,16 @@ def parse_excel(file_path: Path) -> dict[str, list[CostStep]]:
 
             category = _infer_category(f"{current_phase} {name}")
 
+            # Description column (optional — not present in all templates)
+            desc_idx = col_map.get("description")
+            description = (
+                row_vals[desc_idx].strip()
+                if desc_idx is not None and desc_idx < len(row_vals)
+                else ""
+            )
+            if description.lower() in ("nan", "0", "-"):
+                description = ""
+
             steps.append(CostStep(
                 step_id=f"{current_phase} / {first}" if current_phase else f"Step {first}",
                 name=name,
@@ -227,6 +268,7 @@ def parse_excel(file_path: Path) -> dict[str, list[CostStep]]:
                 hourly_rate=eff_rate,
                 hours=hours,
                 persons=persons,
+                description=description,
             ))
 
         if steps:
@@ -259,10 +301,29 @@ def steps_to_text(steps: list[CostStep], project_name: str = "", metadata: dict 
         lines.append(f"Project: {project_name}")
 
     for s in steps:
+        desc_part = f" | Notes: {s.description}" if s.description else ""
         lines.append(
-            f"{s.step_id}: {s.name} | Category: {s.category} | "
+            f"{s.step_id}: {s.name}{desc_part} | Category: {s.category} | "
             f"Rate: {s.hourly_rate}€/h | Hours: {s.hours}h | "
             f"Persons: {s.persons} | Total: {s.total}€"
         )
     lines.append(f"Grand Total: {grand_total(steps)}€")
     return "\n".join(lines)
+
+
+def steps_by_phase(steps: list[CostStep]) -> "dict[str, list[CostStep]]":
+    """
+    Group steps by their phase prefix (the part before ' / ' in step_id).
+    Returns an OrderedDict that preserves the original phase order.
+
+    Example:
+        "Vaihe 1 / 1.0"  →  phase key "Vaihe 1"
+        "Vaihe 2 / 3.0"  →  phase key "Vaihe 2"
+        "Step 1"         →  phase key "Steps"  (no ' / ' separator)
+    """
+    from collections import OrderedDict
+    phases: "OrderedDict[str, list[CostStep]]" = OrderedDict()
+    for s in steps:
+        phase = s.step_id.split(" / ")[0].strip() if " / " in s.step_id else "Steps"
+        phases.setdefault(phase, []).append(s)
+    return phases
