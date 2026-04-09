@@ -23,7 +23,12 @@ def main():
     delete_collection(CHROMA_COLLECTION_COST)
     print("  Done.")
 
-    files = [f for f in COST_HISTORY_DIR.iterdir() if f.is_file() and f.suffix.lower() in SUPPORTED]
+    files = [
+        f for f in COST_HISTORY_DIR.iterdir()
+        if f.is_file()
+        and f.suffix.lower() in SUPPORTED
+        and not f.name.startswith("~$")   # skip Office temp/lock files
+    ]
     if not files:
         print("No files found in cost_history directory. Nothing to index.")
         return

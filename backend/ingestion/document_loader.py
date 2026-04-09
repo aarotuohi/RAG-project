@@ -233,7 +233,7 @@ def index_directory(directory: Path, collection_name: str, extra_metadata: dict 
     results = {}
     supported = {".docx", ".pptx", ".xlsx", ".xls", ".txt", ".md", ".pdf"}
     for f in directory.iterdir():
-        if f.is_file() and f.suffix.lower() in supported:
+        if f.is_file() and f.suffix.lower() in supported and not f.name.startswith("~$"):
             count = index_file(f, collection_name, extra_metadata)
             results[f.name] = count
     return results

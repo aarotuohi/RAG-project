@@ -146,19 +146,30 @@ def parse_excel_metadata(file_path: Path) -> dict[str, str]:
     """
     Extract the offer header metadata (offer number, project name, customer …)
     from the top rows of the first sheet.
+
+    Handles two common layouts:
+      Layout A (label in col 0):  'Tarjous nro' | '3456' | ...
+      Layout B (label in col 1):  None | 'Tarjous nro' | '3456' | ...
     """
     xl = pd.ExcelFile(str(file_path))
     df = xl.parse(xl.sheet_names[0], header=None).fillna("")
     meta: dict[str, str] = {}
     for _, row in df.iterrows():
         vals = [str(v).strip() for v in row.values]
-        first = vals[0].lower() if vals else ""
-        # Stop at the first phase-header row
-        if re.match(r"vaihe\s*\d+", vals[0], re.IGNORECASE):
+        if not vals:
+            continue
+        # Stop at the first phase-header row (any column may contain it)
+        if any(re.match(r"vaihe\s*\d+", v, re.IGNORECASE) for v in vals):
             break
-        eng_key = _META_LABEL_MAP.get(first)
-        if eng_key and len(vals) > 1 and vals[1] not in ("", "nan"):
-            meta[eng_key] = vals[1]
+        # Try label in col 0 (value in col 1), then label in col 1 (value in col 2)
+        for label_idx, value_idx in ((0, 1), (1, 2)):
+            label = vals[label_idx].lower() if len(vals) > label_idx else ""
+            eng_key = _META_LABEL_MAP.get(label)
+            if eng_key and len(vals) > value_idx:
+                value = vals[value_idx]
+                if value not in ("", "nan"):
+                    meta[eng_key] = value
+                    break
     return meta
 
 
