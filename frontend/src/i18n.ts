@@ -67,6 +67,7 @@ const translations = {
     test_total: 'Grand Total',
     test_close: 'Close',
     test_error: 'Test failed',
+    cancel: 'Cancel',
 
     // Section labels (progress)
     sec_thank_you: 'Thank-you paragraph',
@@ -159,6 +160,7 @@ const translations = {
     test_total: 'Kokonaissumma',
     test_close: 'Sulje',
     test_error: 'Testi epäonnistui',
+    cancel: 'Peruuta',
 
     // Section labels (progress)
     sec_thank_you: 'Kiitoskappale',

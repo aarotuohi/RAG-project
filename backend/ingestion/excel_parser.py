@@ -96,12 +96,11 @@ class CostStepGroup:
 
 
 def _infer_category(text: str) -> str:
-    """Guess the work category for a step. Falls back to 'Services'."""
     text_lower = text.lower()
     for cat in WORK_CATEGORIES:
         if cat.lower() in text_lower:
             return cat
-    return "Services"
+    return "Service development"
 
 
 def _safe_float(val) -> float:

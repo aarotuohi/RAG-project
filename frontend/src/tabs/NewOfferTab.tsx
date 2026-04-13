@@ -79,6 +79,7 @@ export default function NewOfferTab({ lang }: Props) {
   const [testResult, setTestResult] = useState<{ section: string; result: any } | null>(null)
   const [testError, setTestError] = useState('')
   const abortControllerRef = useRef<AbortController | null>(null)
+  const testAbortControllerRef = useRef<AbortController | null>(null)
 
   const set = (name: string, value: string) => setProject(p => ({ ...p, [name]: value }))
 
@@ -201,14 +202,23 @@ export default function NewOfferTab({ lang }: Props) {
     setGenerating(false)
     setEvents([])
     setResult(null)
-    setStep('upload')
+    setStep('form')
   }
 
   const download = (path: string) => {
     window.open(`/api/download?path=${encodeURIComponent(path)}`, '_blank')
   }
 
+  const cancelSectionTest = () => {
+    testAbortControllerRef.current?.abort()
+    testAbortControllerRef.current = null
+    setTestingSection(null)
+    setTestError('')
+  }
+
   const runSectionTest = async (section: 'section1' | 'section2') => {
+    const controller = new AbortController()
+    testAbortControllerRef.current = controller
     setTestingSection(section)
     setTestResult(null)
     setTestError('')
@@ -217,6 +227,7 @@ export default function NewOfferTab({ lang }: Props) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ section, project, enable_web_search: webSearch, document_language: documentLanguage }),
+        signal: controller.signal,
       })
       if (!r.ok) {
         const err = await r.json()
@@ -225,9 +236,10 @@ export default function NewOfferTab({ lang }: Props) {
       }
       const data = await r.json()
       setTestResult(data)
-    } catch {
-      setTestError(t('test_error', lang))
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') setTestError(t('test_error', lang))
     } finally {
+      testAbortControllerRef.current = null
       setTestingSection(null)
     }
   }
@@ -383,6 +395,15 @@ export default function NewOfferTab({ lang }: Props) {
               >
                 {testingSection === 'section2' ? <><span className="spinner" /> {t('testing', lang)}</> : t('test_section2_btn', lang)}
               </button>
+              {!!testingSection && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={cancelSectionTest}
+                  style={{ fontSize: 13, color: '#dc2626', borderColor: '#dc2626' }}
+                >
+                  {t('cancel', lang)}
+                </button>
+              )}
             </div>
 
             {testError && (

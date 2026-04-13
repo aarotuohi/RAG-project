@@ -197,7 +197,7 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
                     try:
                         sub_steps.append(CostSubStep(
                             name=str(ss.get("name", "")),
-                            category=str(ss.get("category", "Services")),
+                            category=str(ss.get("category", "Service development")),
                             hourly_rate=float(ss.get("hourly_rate", 0)),
                             hours=float(ss.get("hours", 0)),
                             persons=int(ss.get("persons", 1)),
