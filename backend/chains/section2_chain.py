@@ -55,7 +55,7 @@ Return ONLY a JSON array — no explanation, no markdown, no totals row:
 [
   {{
     "step_id": "STEP 1",
-    "name": "main step name in the same language as the project name",
+    "name": "main step name in {output_language}",
     "output": "short description of what this step delivers",
     "sub_steps": [
       {{
@@ -90,40 +90,50 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
-def _retrieve_similar_projects(description: str, k: int = 20) -> str:
+def _retrieve_similar_projects(description: str, k: int = 8) -> str:
     """
-    Retrieve the most relevant historical cost chunks from ChromaDB.
+    Retrieve the most relevant historical cost phases from ChromaDB.
 
-    Fetches k chunks, then groups every chunk that came from the same source
-    file so the LLM sees each historical project as a coherent whole
-    (all relevant phases together) rather than isolated rows.
-    Returns at most 4 distinct projects to stay within the prompt context budget.
+    Runs one query per expertise area so that phase-level chunks (each chunk
+    is one project phase) are matched by the specific work type they describe,
+    not just by the overall project title.  Results are score-filtered and
+    deduplicated before being returned to the LLM.
     """
     try:
         collection = get_collection(CHROMA_COLLECTION_COST)
-        docs = collection.similarity_search(description, k=k)
 
-        if not docs:
+        # Build a list of targeted sub-queries: overall description + one per
+        # expertise keyword (comma/semicolon separated).
+        expertise_parts = [p.strip() for p in re.split(r"[,;]+", description) if p.strip()]
+        queries = [description] + expertise_parts
+
+        # Collect (score, page_content, source) tuples; lower distance = better.
+        seen_content: set[str] = set()
+        candidates: list[tuple[float, str, str]] = []
+
+        for query in queries:
+            results = collection.similarity_search_with_score(query, k=k)
+            for doc, score in results:
+                content = doc.page_content
+                if content in seen_content:
+                    continue
+                seen_content.add(content)
+                src = doc.metadata.get("source", "unknown")
+                candidates.append((score, content, src))
+
+        if not candidates:
             return "No historical data available."
 
-        # Group chunks by source file, preserving retrieval-score order
-        # (similarity_search returns best matches first).
-        from collections import OrderedDict
-        project_chunks: OrderedDict[str, list[str]] = OrderedDict()
-        for d in docs:
-            src = d.metadata.get("source", "unknown")
-            project_chunks.setdefault(src, [])
-            # Avoid duplicate content (same chunk retrieved twice)
-            if d.page_content not in project_chunks[src]:
-                project_chunks[src].append(d.page_content)
+        # Sort by score ascending (smaller cosine distance = more relevant),
+        # then keep the top 12 phases.
+        candidates.sort(key=lambda x: x[0])
+        top = candidates[:12]
 
+        # Format for the LLM — each phase is a self-contained block.
         sections = []
-        for i, (src, chunks) in enumerate(project_chunks.items(), 1):
-            if i > 4:          # cap at 4 projects to keep prompt size manageable
-                break
+        for i, (score, content, src) in enumerate(top, 1):
             src_name = src.replace("\\", "/").split("/")[-1]
-            combined = "\n\n".join(chunks)
-            sections.append(f"--- Historical project {i}: {src_name} ---\n{combined}")
+            sections.append(f"--- Historical phase {i} (from {src_name}, score={score:.3f}) ---\n{content}")
 
         return "\n\n".join(sections)
     except Exception:
@@ -146,8 +156,7 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
     llm = get_llm()
 
     description_query = (
-        f"{project.project_name} {project.goals} {project.required_expertise} "
-        f"{project.constraints} {project.material_deliverables} {project.payment_type}"
+        f"{project.project_name} {project.goals} {project.required_expertise}"
     )
     historical_data = _retrieve_similar_projects(description_query)
 
@@ -172,7 +181,8 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
             f"  - {cat}: {CATEGORY_RATES[cat]}\u20ac/h"
             for cat in WORK_CATEGORIES
         ),
-    )
+        output_language="Finnish" if language == "fi" else "English",
+    ) + f"\n\nIMPORTANT: All text fields in the JSON (name, output, sub-step name) MUST be written in {'Finnish' if language == 'fi' else 'English'}, regardless of the language of the historical data."
     raw = llm.invoke(est_prompt)
     cleaned = _clean_json(raw)
 
