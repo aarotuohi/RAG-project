@@ -65,7 +65,7 @@ export default function NewOfferTab({ lang }: Props) {
   const [extracting, setExtracting] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [events, setEvents] = useState<ProgressEvent[]>([])
-  const [result, setResult] = useState<{ docx?: string; pdf?: string } | null>(null)
+  const [result, setResult] = useState<{ docx?: string; pdf?: string; xlsx?: string } | null>(null)
   const [webSearch, setWebSearch] = useState(true)
   const [exportPdf, setExportPdf] = useState(true)
   const [documentLanguage, setDocumentLanguage] = useState<'en' | 'fi'>('en')
@@ -184,7 +184,7 @@ export default function NewOfferTab({ lang }: Props) {
             const ev: ProgressEvent = JSON.parse(line)
             setEvents(prev => [...prev, ev])
             if (ev.status === 'done' && ev.docx) {
-              setResult({ docx: ev.docx, pdf: ev.pdf || undefined })
+              setResult({ docx: ev.docx, pdf: ev.pdf || undefined, xlsx: (ev as any).xlsx || undefined })
               setStep('done')
             }
           } catch { /* ignore */ }
@@ -570,6 +570,11 @@ export default function NewOfferTab({ lang }: Props) {
               {result.pdf && (
                 <button className="btn btn-primary" onClick={() => download(result.pdf!)}>
                   {t('download_pdf', lang)}
+                </button>
+              )}
+              {result.xlsx && (
+                <button className="btn btn-secondary" onClick={() => download(result.xlsx!)}>
+                  {t('download_xlsx', lang)}
                 </button>
               )}
               <button className="btn btn-secondary" onClick={() => { setStep('form'); setEvents([]); setResult(null) }}>

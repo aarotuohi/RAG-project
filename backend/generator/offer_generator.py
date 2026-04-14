@@ -16,6 +16,7 @@ from backend.chains.boilerplate import (
 )
 from backend.generator.docx_builder import build_offer_document
 from backend.generator.pdf_converter import convert_to_pdf
+from backend.generator.excel_builder import build_cost_excel
 from backend.ingestion.contact_parser import parse_contact_file, lookup
 from backend.config import CONTACTS_DIR
 
@@ -94,6 +95,12 @@ def generate_offer(
         yield {"status": "progress", "section": "docx", "message": "Assembling DOCX document…"}
         docx_path = build_offer_document(project, sections, salesperson_contact)
 
+        xlsx_path = None
+        try:
+            xlsx_path = build_cost_excel(project, sections["section2"])
+        except Exception as e:
+            yield {"status": "warning", "section": "docx", "message": f"Excel export failed: {e}"}
+
         pdf_path = None
         if export_pdf:
             yield {"status": "progress", "section": "pdf", "message": "Converting to PDF…"}
@@ -108,6 +115,7 @@ def generate_offer(
             "message": "Offer generated successfully.",
             "docx": str(docx_path),
             "pdf": str(pdf_path) if pdf_path else None,
+            "xlsx": str(xlsx_path) if xlsx_path else None,
         }
 
     except Exception as e:

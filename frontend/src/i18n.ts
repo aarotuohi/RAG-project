@@ -51,6 +51,7 @@ const translations = {
     generating: '⏳ Generating Offer…',
     download_docx: '⬇️ Download DOCX',
     download_pdf: '⬇️ Download PDF',
+    download_xlsx: '⬇️ Download Cost Table (Excel)',
     edit_regenerate: '✏️ Edit & Regenerate',
     back_transcript: '← Back to transcript',
 
@@ -144,6 +145,7 @@ const translations = {
     generating: '⏳ Luodaan tarjousta…',
     download_docx: '⬇️ Lataa DOCX',
     download_pdf: '⬇️ Lataa PDF',
+    download_xlsx: '⬇️ Lataa kustannustaulukko (Excel)',
     edit_regenerate: '✏️ Muokkaa & luo uudelleen',
     back_transcript: '← Takaisin litteraatin valintaan',
 
