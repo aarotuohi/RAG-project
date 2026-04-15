@@ -11,30 +11,18 @@ from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from backend.config import OLLAMA_BASE_URL, OLLAMA_LLM_MODEL, OLLAMA_EMBED_MODEL, OLLAMA_NUM_CTX
 
 
-def _get_vram_gb() -> float:
-    """Return available VRAM in GB from the first NVIDIA GPU, or 0 if none."""
+def _get_available_ram_gb() -> float:
+    """Return available (free) system RAM in GB."""
     try:
-        out = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-            text=True, timeout=5,
-        )
-        return float(out.strip().split("\n")[0]) / 1024
+        import psutil
+        return psutil.virtual_memory().available / (1024 ** 3)
     except Exception:
-        return 0.0
+        return 999.0  # assume enough if psutil not installed
 
 
 def recommend_model() -> str:
-
-    """Choose the best Ollama LLM model based on detected VRAM."""
-    vram = _get_vram_gb()
-    if vram >= 22:
-        return "llama3.3:70b-instruct-q4_K_M"
-    elif vram >= 14:
-        return "qwen2.5:32b-instruct-q4_K_M"
-    elif vram >= 7:
-        return "qwen2.5:14b-instruct-q4_K_M"
-    else:
-        return "qwen2.5:7b-instruct-q4_K_M"
+    """Return the configured LLM model."""
+    return "qwen2.5:14b-instruct-q4_K_M"
 
  
 def is_ollama_running() -> bool:

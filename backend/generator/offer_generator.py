@@ -93,7 +93,7 @@ def generate_offer(
         sections["section10_text"] = generate_contact_text(project, language=language, salesperson_contact=salesperson_contact)
 
         yield {"status": "progress", "section": "docx", "message": "Assembling DOCX document…"}
-        docx_path = build_offer_document(project, sections, salesperson_contact)
+        docx_path = build_offer_document(project, sections, salesperson_contact, language=language)
 
         xlsx_path = None
         try:

@@ -32,7 +32,7 @@ for _d in [
 OLLAMA_BASE_URL    = os.environ.get("OLLAMA_BASE_URL",   "http://localhost:11434")
 OLLAMA_LLM_MODEL   = os.environ.get("OLLAMA_LLM_MODEL",  "qwen2.5:14b-instruct-q4_K_M")   # overridden at startup
 OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-OLLAMA_NUM_CTX     = int(os.environ.get("OLLAMA_NUM_CTX", 8192))  # context window tokens sent to Ollama
+OLLAMA_NUM_CTX     = int(os.environ.get("OLLAMA_NUM_CTX", 4096))  # context window tokens sent to Ollama
 
 # ChromaDB settings 
 CHROMA_COLLECTION_COST     = "cost_history"

@@ -28,6 +28,9 @@ pandas>=2.2.0
 requests>=2.32.0
 python-multipart>=0.0.9
 
+# System info
+psutil>=5.9.0
+
 # Web scraping
 crawl4ai>=0.4.0
 

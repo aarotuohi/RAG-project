@@ -141,10 +141,88 @@ def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: floa
     _set_cell_text(total_row[3], _fmt_eur(grand_total), bold=True, align_right=True)
 
 
+def _setup_header_footer(doc: Document, language: str, logo_path: Path | None = None) -> None:
+    """Add Confidential header and company name footer to every page.
+
+    First-page header strategy:
+      - If the template already has a first-page header part (the user placed the
+        logo there in Word), preserve it exactly and do not touch it.
+      - Otherwise fall back to building a 2-column borderless table with
+        "Confidential" on the left and the logo on the right.
+    """
+    confidential = "Luottamuksellinen" if language == "fi" else "Confidential"
+
+    for sec in doc.sections:
+        # Check BEFORE enabling titlePg whether the template already supplies
+        # a dedicated first-page header (w:headerReference type="first").
+        existing_fp_ref = any(
+            ref.get(qn('w:type')) == 'first'
+            for ref in sec._sectPr.findall(qn('w:headerReference'))
+        )
+
+        # Use the correct python-docx property name (different_first_page_header
+        # is not a real property; the correct one includes _footer).
+        sec.different_first_page_header_footer = True
+        # Also inject <w:titlePg/> directly — without it Word ignores the
+        # first-page header reference entirely, making the logo invisible.
+        if sec._sectPr.find(qn('w:titlePg')) is None:
+            title_pg = OxmlElement('w:titlePg')
+            sec._sectPr.insert(0, title_pg)
+
+        # ── First page header ─────────────────────────────────────────────────
+        if existing_fp_ref:
+            # Template already has the logo placed correctly — leave it alone.
+            pass
+        else:
+            # No template first-page header: build one with logo on the right.
+            fp_header = sec.first_page_header
+            hdr_el = fp_header._element
+            for child in list(hdr_el):
+                tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                if tag in ("p", "tbl"):
+                    hdr_el.remove(child)
+
+            # 2-column borderless table: text left, logo right.
+            tbl = fp_header.add_table(rows=1, cols=2, width=Cm(15.5))
+            _clear_table_borders(tbl)
+
+            left_cell = tbl.rows[0].cells[0]
+            lp = left_cell.paragraphs[0]
+            run_l = lp.add_run(confidential)
+            run_l.font.name = OFFER_FONT
+
+            right_cell = tbl.rows[0].cells[1]
+            rp = right_cell.paragraphs[0]
+            rp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            if logo_path and logo_path.exists():
+                rp.add_run().add_picture(str(logo_path), width=Cm(4))
+            elif logo_path:
+                import warnings
+                warnings.warn(f"Logo file not found: {logo_path}", stacklevel=2)
+
+            # OOXML requires every header/footer to end with a <w:p> element.
+            fp_header._element.append(OxmlElement('w:p'))
+
+        # ── Default header (pages 2+): Confidential (left) ────────────────────
+        hp = sec.header.paragraphs[0]
+        hp.clear()
+        run_h = hp.add_run(confidential)
+        run_h.font.name = OFFER_FONT
+
+        # ── Footers (all pages): bold company name (left) ─────────────────────
+        for footer in (sec.first_page_footer, sec.footer):
+            pf = footer.paragraphs[0]
+            pf.clear()
+            run_f = pf.add_run("company name")
+            run_f.bold = True
+            run_f.font.name = OFFER_FONT
+
+
 def build_offer_document(
     project: ProjectData,
     sections: dict,
     salesperson_contact: dict | None = None,
+    language: str = "en",
 ) -> Path:
     """
     Build the complete offer .docx file.
@@ -174,6 +252,7 @@ def build_offer_document(
             section.right_margin = Cm(2.5)
 
     _set_default_font(doc, OFFER_FONT)
+    _setup_header_footer(doc, language, TEMPLATES_DIR / "LINK_LOGO.png")
     doc_date = project.document_date or date.today().isoformat()
 
     # ── Header block ─────────────────────────────────────────────────────────
@@ -298,18 +377,19 @@ def build_offer_document(
 
     # ── Section 12 — Attachments ──────────────────────────────────────────────
     _add_heading(doc, "12. Attachments", 1)
+    att_prefix = "Liite" if language == "fi" else "Appendix"
     attachments = [
-        "1. General terms and conditions",
-        "2. Consulting service contract terms",
-        "3. Constraints",
-        "4. Cost estimate calculations",
+        f"{att_prefix} 1. General terms and conditions",
+        f"{att_prefix} 2. Consulting service contract terms",
+        f"{att_prefix} 3. Constraints",
+        f"{att_prefix} 4. Cost estimate calculations",
     ]
     experts = s8.get("experts", [])
     expert_names = [e.get("name", "") for e in experts]
     if expert_names:
-        attachments.append(f"5. Expert CVs: {', '.join(expert_names)}")
+        attachments.append(f"{att_prefix} 5. Expert CVs: {', '.join(expert_names)}")
     else:
-        attachments.append("5. Expert CVs")
+        attachments.append(f"{att_prefix} 5. Expert CVs")
 
     for att in attachments:
         doc.add_paragraph(att, style="List Number")
