@@ -125,6 +125,7 @@ class GenerateRequest(BaseModel):
     project: dict
     enable_web_search: bool = True
     export_pdf: bool = True
+    generate_cost_table: bool = True
     document_language: str = "en"  # "en" | "fi"
 
 
@@ -134,7 +135,7 @@ def generate(req: GenerateRequest):
     project = ProjectData(**{k: v for k, v in req.project.items() if k in ProjectData.__dataclass_fields__})
 
     def event_stream():
-        for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.document_language):
+        for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.generate_cost_table, req.document_language):
             # Pad to >1KB so TCP/proxy buffers flush immediately on every event
             line = json.dumps(event) + "\n"
             yield line + (" " * max(0, 1024 - len(line))) + "\n"

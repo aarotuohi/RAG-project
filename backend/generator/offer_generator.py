@@ -39,6 +39,7 @@ def generate_offer(
     project: ProjectData,
     enable_web_search: bool = True,
     export_pdf: bool = True,
+    generate_cost_table: bool = True,
     language: str = "en",
 ) -> Iterator[dict]:
     """
@@ -96,10 +97,11 @@ def generate_offer(
         docx_path = build_offer_document(project, sections, salesperson_contact, language=language)
 
         xlsx_path = None
-        try:
-            xlsx_path = build_cost_excel(project, sections["section2"])
-        except Exception as e:
-            yield {"status": "warning", "section": "docx", "message": f"Excel export failed: {e}"}
+        if generate_cost_table:
+            try:
+                xlsx_path = build_cost_excel(project, sections["section2"])
+            except Exception as e:
+                yield {"status": "warning", "section": "docx", "message": f"Excel export failed: {e}"}
 
         pdf_path = None
         if export_pdf:

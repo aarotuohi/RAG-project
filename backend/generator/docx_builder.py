@@ -142,66 +142,44 @@ def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: floa
 
 
 def _setup_header_footer(doc: Document, language: str, logo_path: Path | None = None) -> None:
-    """Add Confidential header and company name footer to every page.
-
-    First-page header strategy:
-      - If the template already has a first-page header part (the user placed the
-        logo there in Word), preserve it exactly and do not touch it.
-      - Otherwise fall back to building a 2-column borderless table with
-        "Confidential" on the left and the logo on the right.
-    """
+    """Add Confidential header and company name footer to every page."""
     confidential = "Luottamuksellinen" if language == "fi" else "Confidential"
 
     for sec in doc.sections:
-        # Check BEFORE enabling titlePg whether the template already supplies
-        # a dedicated first-page header (w:headerReference type="first").
-        existing_fp_ref = any(
-            ref.get(qn('w:type')) == 'first'
-            for ref in sec._sectPr.findall(qn('w:headerReference'))
-        )
+        sec.different_first_page_header = True
 
-        # Use the correct python-docx property name (different_first_page_header
-        # is not a real property; the correct one includes _footer).
-        sec.different_first_page_header_footer = True
-        # Also inject <w:titlePg/> directly — without it Word ignores the
-        # first-page header reference entirely, making the logo invisible.
-        if sec._sectPr.find(qn('w:titlePg')) is None:
-            title_pg = OxmlElement('w:titlePg')
-            sec._sectPr.insert(0, title_pg)
+        # ── First page header: Confidential (left) + logo (right) ─────────────
+        # Clear all existing content from the first-page header element so
+        # template leftovers don't interfere.
+        fp_header = sec.first_page_header
+        hdr_el = fp_header._element
+        for child in list(hdr_el):
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag in ("p", "tbl"):
+                hdr_el.remove(child)
 
-        # ── First page header ─────────────────────────────────────────────────
-        if existing_fp_ref:
-            # Template already has the logo placed correctly — leave it alone.
-            pass
-        else:
-            # No template first-page header: build one with logo on the right.
-            fp_header = sec.first_page_header
-            hdr_el = fp_header._element
-            for child in list(hdr_el):
-                tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-                if tag in ("p", "tbl"):
-                    hdr_el.remove(child)
+        # A 2-column borderless table is the reliable way to place content on
+        # the left and right of the same header line.
+        tbl = fp_header.add_table(rows=1, cols=2, width=Cm(15.5))
+        _clear_table_borders(tbl)
 
-            # 2-column borderless table: text left, logo right.
-            tbl = fp_header.add_table(rows=1, cols=2, width=Cm(15.5))
-            _clear_table_borders(tbl)
+        left_cell = tbl.rows[0].cells[0]
+        lp = left_cell.paragraphs[0]
+        run_l = lp.add_run(confidential)
+        run_l.font.name = OFFER_FONT
 
-            left_cell = tbl.rows[0].cells[0]
-            lp = left_cell.paragraphs[0]
-            run_l = lp.add_run(confidential)
-            run_l.font.name = OFFER_FONT
+        right_cell = tbl.rows[0].cells[1]
+        rp = right_cell.paragraphs[0]
+        rp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        if logo_path and logo_path.exists():
+            rp.add_run().add_picture(str(logo_path), width=Cm(4))
+        elif logo_path:
+            import warnings
+            warnings.warn(f"Logo file not found: {logo_path}", stacklevel=2)
 
-            right_cell = tbl.rows[0].cells[1]
-            rp = right_cell.paragraphs[0]
-            rp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            if logo_path and logo_path.exists():
-                rp.add_run().add_picture(str(logo_path), width=Cm(4))
-            elif logo_path:
-                import warnings
-                warnings.warn(f"Logo file not found: {logo_path}", stacklevel=2)
-
-            # OOXML requires every header/footer to end with a <w:p> element.
-            fp_header._element.append(OxmlElement('w:p'))
+        # OOXML requires every header/footer to end with a <w:p> element.
+        # Without it Word silently drops the entire header content.
+        fp_header._element.append(OxmlElement('w:p'))
 
         # ── Default header (pages 2+): Confidential (left) ────────────────────
         hp = sec.header.paragraphs[0]
@@ -209,13 +187,43 @@ def _setup_header_footer(doc: Document, language: str, logo_path: Path | None = 
         run_h = hp.add_run(confidential)
         run_h.font.name = OFFER_FONT
 
-        # ── Footers (all pages): bold company name (left) ─────────────────────
-        for footer in (sec.first_page_footer, sec.footer):
-            pf = footer.paragraphs[0]
-            pf.clear()
-            run_f = pf.add_run("company name")
-            run_f.bold = True
-            run_f.font.name = OFFER_FONT
+        # ── First page footer: 3-column company info block ────────────────────
+        fp_footer = sec.first_page_footer
+        fp_ftr_el = fp_footer._element
+        for child in list(fp_ftr_el):
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag in ("p", "tbl"):
+                fp_ftr_el.remove(child)
+
+        ftbl = fp_footer.add_table(rows=1, cols=3, width=Cm(15.5))
+        _clear_table_borders(ftbl)
+
+        col1_lines = [("Espoon toimipiste", True), ("Innopoli 1", False),
+                      ("Tekniikantie 12", False), ("02150", False), ("Espoo", False)]
+        col2_lines = [("Salon toimipiste", True), ("Salo IoT Campus", False),
+                      ("Joensuunkatu 7", False), ("24100", False), ("Salo", False)]
+        col3_lines = [("+358 40 8399 313", False), ("info@linkdesign.fi", False),
+                      ("VAT: FI2251285-9", False), ("linkdesign.fi", False)]
+
+        for col_idx, lines in enumerate([col1_lines, col2_lines, col3_lines]):
+            cell = ftbl.rows[0].cells[col_idx]
+            for line_idx, (text, bold) in enumerate(lines):
+                if line_idx == 0:
+                    para = cell.paragraphs[0]
+                else:
+                    para = cell.add_paragraph()
+                run_c = para.add_run(text)
+                run_c.bold = bold
+                run_c.font.name = OFFER_FONT
+
+        fp_footer._element.append(OxmlElement('w:p'))
+
+        # ── Default footer (pages 2+): bold company name (left) ───────────────
+        pf = sec.footer.paragraphs[0]
+        pf.clear()
+        run_f = pf.add_run("Link Design Oy")
+        run_f.bold = True
+        run_f.font.name = OFFER_FONT
 
 
 def build_offer_document(

@@ -68,6 +68,7 @@ export default function NewOfferTab({ lang }: Props) {
   const [result, setResult] = useState<{ docx?: string; pdf?: string; xlsx?: string } | null>(null)
   const [webSearch, setWebSearch] = useState(true)
   const [exportPdf, setExportPdf] = useState(true)
+  const [costTable, setCostTable] = useState(true)
   const [documentLanguage, setDocumentLanguage] = useState<'en' | 'fi'>('en')
   const [step, setStep] = useState<'upload' | 'form' | 'generating' | 'done'>('upload')
   const [selectedPath, setSelectedPath] = useState('')
@@ -164,7 +165,7 @@ export default function NewOfferTab({ lang }: Props) {
       const resp = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project, enable_web_search: webSearch, export_pdf: exportPdf, document_language: documentLanguage }),
+        body: JSON.stringify({ project, enable_web_search: webSearch, export_pdf: exportPdf, generate_cost_table: costTable, document_language: documentLanguage }),
         signal: controller.signal,
       })
 
@@ -494,6 +495,10 @@ export default function NewOfferTab({ lang }: Props) {
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={webSearch} onChange={e => setWebSearch(e.target.checked)} />
                 <span>{t('web_search_label', lang)}</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={costTable} onChange={e => setCostTable(e.target.checked)} />
+                <span>{t('cost_table_label', lang)}</span>
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={exportPdf} onChange={e => setExportPdf(e.target.checked)} />
