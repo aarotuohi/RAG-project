@@ -187,7 +187,7 @@ def _setup_header_footer(doc: Document, language: str, logo_path: Path | None = 
         run_h = hp.add_run(confidential)
         run_h.font.name = OFFER_FONT
 
-        # ── First page footer: 3-column company info block ────────────────────
+        # ── First page footer: 4-column company info block ────────────────────
         fp_footer = sec.first_page_footer
         fp_ftr_el = fp_footer._element
         for child in list(fp_ftr_el):
@@ -195,26 +195,37 @@ def _setup_header_footer(doc: Document, language: str, logo_path: Path | None = 
             if tag in ("p", "tbl"):
                 fp_ftr_el.remove(child)
 
-        ftbl = fp_footer.add_table(rows=1, cols=3, width=Cm(15.5))
+        # Spacer paragraph to separate footer table from document body
+        spacer = fp_footer.add_paragraph()
+        spacer.paragraph_format.space_before = Pt(0)
+        spacer.paragraph_format.space_after = Pt(8)
+
+        ftbl = fp_footer.add_table(rows=1, cols=4, width=Cm(15.5))
         _clear_table_borders(ftbl)
 
-        col1_lines = [("Espoon toimipiste", True), ("Innopoli 1", False),
+        col1_lines = [("Link Design Oy", True)]
+        col2_lines = [("Espoon toimipiste", True), ("Innopoli 1", False),
                       ("Tekniikantie 12", False), ("02150", False), ("Espoo", False)]
-        col2_lines = [("Salon toimipiste", True), ("Salo IoT Campus", False),
+        col3_lines = [("Salon toimipiste", True), ("Salo IoT Campus", False),
                       ("Joensuunkatu 7", False), ("24100", False), ("Salo", False)]
-        col3_lines = [("+358 40 8399 313", False), ("info@linkdesign.fi", False),
+        col4_lines = [("+358 40 8399 313", False), ("info@linkdesign.fi", False),
                       ("VAT: FI2251285-9", False), ("linkdesign.fi", False)]
 
-        for col_idx, lines in enumerate([col1_lines, col2_lines, col3_lines]):
+        for col_idx, lines in enumerate([col1_lines, col2_lines, col3_lines, col4_lines]):
             cell = ftbl.rows[0].cells[col_idx]
             for line_idx, (text, bold) in enumerate(lines):
                 if line_idx == 0:
                     para = cell.paragraphs[0]
                 else:
                     para = cell.add_paragraph()
+                # Remove paragraph spacing so lines sit tight together
+                para.paragraph_format.space_before = Pt(0)
+                para.paragraph_format.space_after = Pt(0)
+                para.paragraph_format.line_spacing = Pt(11)
                 run_c = para.add_run(text)
                 run_c.bold = bold
                 run_c.font.name = OFFER_FONT
+                run_c.font.size = Pt(9)
 
         fp_footer._element.append(OxmlElement('w:p'))
 

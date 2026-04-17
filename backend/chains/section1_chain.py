@@ -205,34 +205,48 @@ def _get_company_content(company_name: str) -> str:
 
 
 _BACKGROUND_PROMPT = PromptTemplate.from_template(
-    """You are writing the background section of a professional B2B sales offer document.
+    """You are writing the opening paragraph of Section 1 (Background and Goals) of a professional B2B sales offer document.
 
-Using only the website content below, write 2-4 sentences describing {company_name}.
-Cover: what industry they operate in, what products or services they provide,
-and any notable scale, specialization, or geographic reach mentioned on the site.
+Using the website content and project information below, produce exactly three sentences in this order:
+
+1. One sentence describing what {company_name} does — focus only on their most important product or service offering. Write in third person, professional and neutral tone.
+2. One sentence: "{company_name} (hereinafter referred to as the Client) is developing / planning / researching [1-2 clauses describing the project background and motivation based on the goals below]."
+3. One sentence: "Against this background, the Client has requested an offer from LINK Design and Development Oy (hereinafter referred to as the Supplier) for the implementation of {project_name} (hereinafter referred to as the Project)."
 
 Rules:
-- Write in third person ("Company X is…"), professional and neutral tone.
+- Do NOT add headings, bullet points, or any text outside the three sentences.
 - Do NOT start with "Based on the website" or "According to the content".
-- Do NOT invent facts not present in the content.
+- Do NOT invent facts not present in the content or goals.
 - Do NOT include cookie notices, navigation items, or marketing slogans.
 
 Website content:
 {search_results}
 
-Company background:"""
+Project goals: {goals}
+
+Opening paragraph:"""
 )
 
 _GOALS_PROMPT = PromptTemplate.from_template(
-    """Based on the following project information extracted from a sales meeting, 
-write a structured paragraph describing the project goals, objectives, and constraints.
-Keep it professional and concise (3-5 sentences).
+    """You are writing Section 1 (Background and Goals) of a professional B2B sales offer document.
 
+Using the project information below, produce the section in this exact structure:
+
+1. One sentence: "The goal of the Project is [1-2 sentences describing the concrete objective]."
+2. A short lead-in sentence: "The following preliminary constraints were discussed between the Client and the Supplier:"
+3. A lettered list (a., b., c., …) of the key constraints, one per line.
+4. A closing sentence: "The preliminary constraints of the Project are presented in more detail in Appendix 3. The stated constraints will be refined during the phases of the Project."
+
+Rules:
+- Write in third person, professional and neutral tone.
+- Do NOT add headings or extra commentary outside the structure above.
+- Use only the information provided; do not invent facts.
+
+Project name: {other_notes}
 Goals: {goals}
 Constraints: {constraints}
-Other notes: {other_notes}
 
-Project goals and constraints paragraph:"""
+Section 1 text:"""
 )
 
 
@@ -252,6 +266,8 @@ def generate_section1(project: ProjectData, enable_web_search: bool = True, lang
                 raise ValueError("No content retrieved from company website")
             prompt = _BACKGROUND_PROMPT.format(
                 company_name=project.company_name,
+                project_name=project.project_name or "the Project",
+                goals=project.goals or "Not specified",
                 search_results=results[:5000],
             ) + f"\n\n{lang_note}"
             company_background = llm.invoke(prompt).strip()
