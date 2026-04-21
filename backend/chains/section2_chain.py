@@ -12,7 +12,7 @@ from langchain_core.prompts import PromptTemplate
 
 from backend.ollama_client import get_llm
 from backend.vectorstore.chroma_client import get_collection
-from backend.config import CHROMA_COLLECTION_COST, WORK_CATEGORIES, CATEGORY_RATES
+from backend.config import CHROMA_COLLECTION_COST, WORK_CATEGORIES, CATEGORY_RATES, get_cost_history_categories
 from backend.chains.extraction_chain import ProjectData
 from backend.ingestion.excel_parser import CostSubStep, CostStepGroup
 
@@ -90,7 +90,27 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
-def _retrieve_similar_projects(description: str, k: int = 8) -> str:
+def _best_category(query: str, categories: list[str]) -> str | None:
+    """
+    Return the best matching category folder name for the given project query,
+    or None if no category has any token overlap (falls back to searching all).
+    """
+    if not categories:
+        return None
+    if len(categories) == 1:
+        return categories[0]
+
+    query_tokens = set(re.sub(r"[^a-z\s]", "", query.lower()).split())
+    best_cat, best_score = None, 0
+    for cat in categories:
+        cat_tokens = set(re.sub(r"[_\-]", " ", cat).lower().split())
+        score = len(query_tokens & cat_tokens)
+        if score > best_score:
+            best_score, best_cat = score, cat
+    return best_cat if best_score > 0 else None
+
+
+def _retrieve_similar_projects(description: str, k: int = 8, project_category: str | None = None) -> str:
     """
     Retrieve the most relevant historical cost phases from ChromaDB.
 
@@ -98,9 +118,16 @@ def _retrieve_similar_projects(description: str, k: int = 8) -> str:
     is one project phase) are matched by the specific work type they describe,
     not just by the overall project title.  Results are score-filtered and
     deduplicated before being returned to the LLM.
+
+    If *project_category* is given, only chunks from that sub-folder are searched.
     """
     try:
         collection = get_collection(CHROMA_COLLECTION_COST)
+
+        # Optional category filter (matches project_category metadata stored at ingest time)
+        where_filter: dict | None = (
+            {"project_category": project_category} if project_category else None
+        )
 
         # Build a list of targeted sub-queries: overall description + one per
         # expertise keyword (comma/semicolon separated).
@@ -112,7 +139,7 @@ def _retrieve_similar_projects(description: str, k: int = 8) -> str:
         candidates: list[tuple[float, str, str]] = []
 
         for query in queries:
-            results = collection.similarity_search_with_score(query, k=k)
+            results = collection.similarity_search_with_score(query, k=k, filter=where_filter)
             for doc, score in results:
                 content = doc.page_content
                 if content in seen_content:
@@ -156,9 +183,14 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
     llm = get_llm()
 
     description_query = (
-        f"{project.project_name} {project.goals} {project.required_expertise}"
+        f"{project.project_name} {project.goals} {project.required_expertise} "
+        f"{project.material_deliverables}"
     )
-    historical_data = _retrieve_similar_projects(description_query)
+
+    # Pick the most relevant cost-history sub-folder for this project
+    categories = get_cost_history_categories()
+    best_cat = _best_category(description_query, categories)
+    historical_data = _retrieve_similar_projects(description_query, project_category=best_cat)
 
     # --- Step 1: Generate description paragraph ---
     desc_prompt = _DESCRIPTION_PROMPT.format(

@@ -20,6 +20,7 @@ from backend.config import (
     TRANSCRIPTS_DIR,
     CHROMA_COLLECTION_COST, CHROMA_COLLECTION_CV, CHROMA_COLLECTION_BOILER, CHROMA_COLLECTION_CONTACTS,
     OUTPUTS_DIR, SETTINGS_FILE,
+    COST_HISTORY_DIR, get_cost_history_categories,
 )
 
 
@@ -85,6 +86,36 @@ def get_status():
             "contacts":     collection_count(CHROMA_COLLECTION_CONTACTS),
         },
     }
+
+
+@router.get("/cost-history-folders")
+def list_cost_history_folders():
+    """List available cost-history category sub-folders and the files inside each."""
+    result = []
+    for cat in get_cost_history_categories():
+        folder = COST_HISTORY_DIR / cat
+        files = [
+            {"name": f.name, "size": f.stat().st_size}
+            for f in sorted(folder.iterdir())
+            if f.is_file() and f.suffix.lower() in (".xlsx", ".xls")
+        ]
+        result.append({"folder": cat, "files": files})
+    return result
+
+
+class CreateFolderRequest(BaseModel):
+    folder_name: str
+
+
+@router.post("/cost-history-folders")
+def create_cost_history_folder(req: CreateFolderRequest):
+    """Create a new cost-history category sub-folder."""
+    name = req.folder_name.strip().replace(" ", "_").lower()
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid folder name")
+    target = COST_HISTORY_DIR / name
+    target.mkdir(parents=True, exist_ok=True)
+    return {"folder": name, "created": True}
 
 
 # ── Transcript Extraction ─────────────────────────────────────────────────────
@@ -169,6 +200,24 @@ def list_outputs():
     return sorted(files, key=lambda x: x["name"], reverse=True)
 
 
+class DeleteRequest(BaseModel):
+    path: str
+
+
+@router.post("/delete-output")
+def delete_output(req: DeleteRequest):
+    """Delete a generated offer file. Only files inside OUTPUTS_DIR are allowed."""
+    file_path = Path(req.path)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        file_path.resolve().relative_to(OUTPUTS_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    file_path.unlink()
+    return {"deleted": True, "name": file_path.name}
+
+
 # ── Section Test Endpoints ───────────────────────────────────────────────────
 
 class TestGenerateRequest(BaseModel):
@@ -238,12 +287,14 @@ _INGEST_DIR_MAP = {
 async def ingest_file(
     collection: str,
     file: UploadFile = FastAPIFile(...),
+    folder: str = "",
 ):
     """
     Accept a file upload, save it to disk, and queue it for background ingestion.
     Returns a job_id immediately — the actual indexing happens in the background.
 
     collection must be one of: cost_history | cv | boilerplate | contacts
+    folder (optional): for cost_history only — the sub-folder (category) to save the file into.
     """
     if collection not in _INGEST_COLLECTION_MAP:
         raise HTTPException(
@@ -258,6 +309,14 @@ async def ingest_file(
         "boilerplate":  BOILERPLATE_DIR,
         "contacts":     CONTACTS_DIR,
     }[collection]
+
+    # For cost_history, optionally place the file inside a category sub-folder
+    if collection == "cost_history" and folder:
+        safe_folder = folder.strip().replace(" ", "_").lower()
+        if safe_folder and "/" not in safe_folder and "\\" not in safe_folder and not safe_folder.startswith("."):
+            sub = dest_dir / safe_folder
+            sub.mkdir(parents=True, exist_ok=True)
+            dest_dir = sub
 
     dest = dest_dir / (file.filename or "upload")
     stem, suffix, counter = dest.stem, dest.suffix, 1

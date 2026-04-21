@@ -95,6 +95,25 @@ const translations = {
     word_docs: 'Word Documents (.docx)',
     pdf_docs: 'PDF Documents',
     download_btn: '⬇️ Download',
+    delete_btn: '🗑️ Delete',
+    confirm_delete: 'Are you sure you want to delete',
+
+    // DataTab
+    nav_data: '📂 Data',
+    data_title: 'Data Management',
+    cost_history_folders: 'Cost History Folders',
+    cost_history_desc: 'Upload historical project Excel files into a category folder. The system will automatically search the most relevant folder when estimating costs.',
+    folder_label: 'Folder (category)',
+    select_folder: '— Select folder —',
+    new_folder_label: 'Or create new folder',
+    create_folder_btn: 'Create',
+    upload_file_label: 'Excel file (.xlsx)',
+    upload_btn: '⬆️ Upload & Index',
+    uploading: 'Uploading…',
+    upload_success: 'Queued for indexing:',
+    upload_error: 'Upload failed',
+    files_in_folder: 'files',
+    no_files: 'No files yet',
   },
   fi: {
     // Nav
@@ -190,6 +209,25 @@ const translations = {
     word_docs: 'Word-asiakirjat (.docx)',
     pdf_docs: 'PDF-asiakirjat',
     download_btn: '⬇️ Lataa',
+    delete_btn: '🗑️ Poista',
+    confirm_delete: 'Haluatko varmasti poistaa',
+
+    // DataTab
+    nav_data: '📂 Data',
+    data_title: 'Tietojen hallinta',
+    cost_history_folders: 'Kustannushistoriakansiot',
+    cost_history_desc: 'Lataa historialliset projekti-Excel-tiedostot kategoriakansioihin. Järjestelmä etsii automaattisesti sopivimman kansion kustannusarviointia varten.',
+    folder_label: 'Kansio (kategoria)',
+    select_folder: '— Valitse kansio —',
+    new_folder_label: 'Tai luo uusi kansio',
+    create_folder_btn: 'Luo',
+    upload_file_label: 'Excel-tiedosto (.xlsx)',
+    upload_btn: '⬆️ Lataa & Indeksoi',
+    uploading: 'Ladataan…',
+    upload_success: 'Jonossa indeksoitavaksi:',
+    upload_error: 'Lataus epäonnistui',
+    files_in_folder: 'tiedostoa',
+    no_files: 'Ei tiedostoja vielä',
   },
 } as const
 

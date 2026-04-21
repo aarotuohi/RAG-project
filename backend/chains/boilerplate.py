@@ -3,11 +3,24 @@ Boilerplate injector — reads static text files and returns their content verba
 Sections 4, 6, 7, 9 use this to ensure legal/compliance text is never hallucinated.
 """
 from __future__ import annotations
+from datetime import date
 from pathlib import Path
 from langchain_core.prompts import PromptTemplate
 from backend.config import BOILERPLATE_DIR, BOILERPLATE_FILES
 from backend.ollama_client import get_llm
 from backend.chains.extraction_chain import ProjectData
+
+
+def _fmt_date(value: str) -> str:
+    """Convert an ISO date string (YYYY-MM-DD) to Finnish d.M.YYYY format.
+    Returns the original value unchanged if it is not a parseable ISO date."""
+    if not value:
+        return value
+    try:
+        d = date.fromisoformat(value)
+        return f"{d.day}.{d.month}.{d.year}"
+    except ValueError:
+        return value
 
 
 def read_boilerplate(key: str, language: str = "en") -> str:
@@ -66,7 +79,8 @@ def read_boilerplate_dated(key: str, doc_date: str = "", language: str = "en") -
         parsed = date.today()
 
     last_day = calendar.monthrange(parsed.year, parsed.month)[1]
-    due_date = date(parsed.year, parsed.month, last_day).strftime("%Y-%m-%d")
+    d = date(parsed.year, parsed.month, last_day)
+    due_date = f"{d.day}.{d.month}.{d.year}"
     return text.replace("{payment_due_date}", due_date)
 
 
@@ -90,6 +104,18 @@ Project: {project_name}
 Thank-you paragraph:"""
 )
 
+_THANKYOU_PROMPT_FI = PromptTemplate.from_template(
+    """Kirjoita lyhyt, lämmin ja ammattimainen kiitoskappale (2-3 lausetta) myyntitarjousdokumenttiin.
+Kiitä yritystä tapaamisesta ja ilmaise innostusta mahdollisesta yhteistyöstä.
+Kirjoita koko vastaus suomeksi.
+
+Asiakasyritys: {company_name}
+Asiakkaan nimi: {first_name} {last_name}
+Projekti: {project_name}
+
+Kiitoskappale:"""
+)
+
 _TIMETABLE_PROMPT = PromptTemplate.from_template(
     """Write a concise timetable section (2-4 sentences) for a sales offer document.
 State when the project starts and ends, and mention any key milestones if known.
@@ -101,6 +127,18 @@ Other notes: {other_notes}
 Timetable text:"""
 )
 
+_TIMETABLE_PROMPT_FI = PromptTemplate.from_template(
+    """Kirjoita tiivis aikataulu-osio (2-4 lausetta) myyntitarjousdokumenttiin.
+Kerro milloin projekti alkaa ja päättyy, ja mainitse mahdolliset välitavoitteet.
+Kirjoita koko vastaus suomeksi.
+
+Projektin aloitus: {project_start}
+Projektin lopetus: {project_end}
+Muut huomiot: {other_notes}
+
+Aikatauluteksti:"""
+)
+
 _RESTRICTIONS_PROMPT = PromptTemplate.from_template(
     """Write a professional project restrictions and responsibilities section (3-5 sentences) 
 for a sales offer document. Describe what work the project requires, 
@@ -110,7 +148,28 @@ Payment type: {payment_type}
 Constraints: {constraints}
 Required work: {required_expertise}
 
+Rules:
+- Write each sentence on its own line.
+- Start every line with a tab character (\\t).
+
 Restrictions and responsibilities text:"""
+)
+
+_RESTRICTIONS_PROMPT_FI = PromptTemplate.from_template(
+    """Kirjoita ammattimainen projektin rajoitteet ja vastuut -osio (3-5 lausetta)
+myyntitarjousdokumenttiin. Kuvaile mitä työtä projekti vaatii,
+kerro maksumalli ja asiakkaan vastuut.
+Kirjoita koko vastaus suomeksi.
+
+Maksutyyppi: {payment_type}
+Rajoitteet: {constraints}
+Vaadittu työ: {required_expertise}
+
+Säännöt:
+- Kirjoita jokainen lause omalle rivilleen.
+- Aloita jokainen rivi sarkainmerkillä (\\t).
+
+Rajoitteet ja vastuut -teksti:"""
 )
 
 _MATERIAL_PROMPT = PromptTemplate.from_template(
@@ -123,48 +182,83 @@ Project: {project_name}
 Material transformation text:"""
 )
 
+_MATERIAL_PROMPT_FI = PromptTemplate.from_template(
+    """Kirjoita tiivis materiaalimuutos-osio (2-4 lausetta) myyntitarjousdokumenttiin.
+Kuvaile mitä toimituksia ja materiaaleja asiakas saa.
+Kirjoita koko vastaus suomeksi.
+
+Toimitukset: {material_deliverables}
+Projekti: {project_name}
+
+Materiaalimuutosteksti:"""
+)
+
 
 def generate_thankyou(project: ProjectData, language: str = "en") -> str:
-    lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     llm = get_llm()
-    prompt = _THANKYOU_PROMPT.format(
-        company_name=project.company_name or "your company",
-        first_name=project.first_name or "",
-        last_name=project.last_name or "",
-        project_name=project.project_name or "the project",
-    ) + f"\n\n{lang_note}"
+    if language == "fi":
+        prompt = _THANKYOU_PROMPT_FI.format(
+            company_name=project.company_name or "yrityksenne",
+            first_name=project.first_name or "",
+            last_name=project.last_name or "",
+            project_name=project.project_name or "projekti",
+        )
+    else:
+        prompt = _THANKYOU_PROMPT.format(
+            company_name=project.company_name or "your company",
+            first_name=project.first_name or "",
+            last_name=project.last_name or "",
+            project_name=project.project_name or "the project",
+        ) + "\n\nWrite the entire response in English."
     return llm.invoke(prompt).strip()
 
 
 def generate_timetable(project: ProjectData, language: str = "en") -> str:
-    lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     llm = get_llm()
-    prompt = _TIMETABLE_PROMPT.format(
-        project_start=project.project_start or "To be confirmed",
-        project_end=project.project_end or "To be confirmed",
-        other_notes=project.other_notes or "None",
-    ) + f"\n\n{lang_note}"
+    if language == "fi":
+        prompt = _TIMETABLE_PROMPT_FI.format(
+            project_start=_fmt_date(project.project_start) or "Vahvistetaan myöhemmin",
+            project_end=_fmt_date(project.project_end) or "Vahvistetaan myöhemmin",
+            other_notes=project.other_notes or "Ei muita huomioita",
+        )
+    else:
+        prompt = _TIMETABLE_PROMPT.format(
+            project_start=_fmt_date(project.project_start) or "To be confirmed",
+            project_end=_fmt_date(project.project_end) or "To be confirmed",
+            other_notes=project.other_notes or "None",
+        ) + "\n\nWrite the entire response in English."
     return llm.invoke(prompt).strip()
 
 
 def generate_restrictions(project: ProjectData, language: str = "en") -> str:
-    lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     llm = get_llm()
-    prompt = _RESTRICTIONS_PROMPT.format(
-        payment_type=project.payment_type or "hourly",
-        constraints=project.constraints or "None",
-        required_expertise=project.required_expertise or "Not specified",
-    ) + f"\n\n{lang_note}"
+    if language == "fi":
+        prompt = _RESTRICTIONS_PROMPT_FI.format(
+            payment_type=project.payment_type or "tuntiperusteinen",
+            constraints=project.constraints or "Ei rajoitteita",
+            required_expertise=project.required_expertise or "Ei määritelty",
+        )
+    else:
+        prompt = _RESTRICTIONS_PROMPT.format(
+            payment_type=project.payment_type or "hourly",
+            constraints=project.constraints or "None",
+            required_expertise=project.required_expertise or "Not specified",
+        ) + "\n\nWrite the entire response in English."
     return llm.invoke(prompt).strip()
 
 
 def generate_material(project: ProjectData, language: str = "en") -> str:
-    lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     llm = get_llm()
-    prompt = _MATERIAL_PROMPT.format(
-        material_deliverables=project.material_deliverables or "To be confirmed",
-        project_name=project.project_name or "the project",
-    ) + f"\n\n{lang_note}"
+    if language == "fi":
+        prompt = _MATERIAL_PROMPT_FI.format(
+            material_deliverables=project.material_deliverables or "Vahvistetaan myöhemmin",
+            project_name=project.project_name or "projekti",
+        )
+    else:
+        prompt = _MATERIAL_PROMPT.format(
+            material_deliverables=project.material_deliverables or "To be confirmed",
+            project_name=project.project_name or "the project",
+        ) + "\n\nWrite the entire response in English."
     return llm.invoke(prompt).strip()
 
 

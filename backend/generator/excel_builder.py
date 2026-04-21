@@ -51,6 +51,20 @@ def _set_cell(ws, row: int, col: int, value, bold: bool = False,
     return cell
 
 
+def _parse_project_datetime(value: str) -> datetime:
+    if not value:
+        return datetime.today()
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        pass
+    try:
+        day, month, year = (int(part) for part in value.split("."))
+        return datetime(year, month, day)
+    except Exception:
+        return datetime.today()
+
+
 # ── Main builder ─────────────────────────────────────────────────────────────
 
 def build_cost_excel(project: ProjectData, section2: dict) -> Path:
@@ -72,13 +86,16 @@ def build_cost_excel(project: ProjectData, section2: dict) -> Path:
     steps: list[CostStepGroup] = section2.get("steps", [])
     grand_total: float = section2.get("grand_total", 0.0)
 
+    _d = _parse_project_datetime(project.document_date)
+    _date_fi = f"{_d.day}.{_d.month}.{_d.year}"
+
     # ── Metadata header (rows 1-7) ────────────────────────────────────────────
     meta_rows = [
         ("Tarjous nro",   project.project_number or ""),
         ("Nimi",          project.project_name or ""),
         ("Asiakas",       _customer_label(project)),
         ("Myyntivastuu",  project.salesperson_name or ""),
-        ("Päiväys",       project.document_date or datetime.today().strftime("%Y-%m-%d")),
+        ("Päiväys",       _date_fi),
         ("Kuvaus",        project.goals or ""),
         ("Henkilöt",      project.required_expertise or ""),
     ]

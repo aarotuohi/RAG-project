@@ -9,6 +9,7 @@ interface OutputFile {
 
 interface Props {
   lang: Lang
+  isActive?: boolean
 }
 
 function formatSize(bytes: number): string {
@@ -17,7 +18,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-export default function OutputsTab({ lang }: Props) {
+export default function OutputsTab({ lang, isActive }: Props) {
   const [files, setFiles] = useState<OutputFile[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -30,10 +31,22 @@ export default function OutputsTab({ lang }: Props) {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchOutputs() }, [])
+  useEffect(() => { if (isActive) fetchOutputs() }, [isActive])
 
   const download = (path: string) => {
     window.open(`/api/download?path=${encodeURIComponent(path)}`, '_blank')
+  }
+
+  const deleteFile = async (file: OutputFile) => {
+    if (!confirm(`${t('confirm_delete', lang)} "${file.name}"?`)) return
+    try {
+      const r = await fetch('/api/delete-output', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: file.path }),
+      })
+      if (r.ok) setFiles(prev => prev.filter(f => f.path !== file.path))
+    } catch { /* ignore */ }
   }
 
   const docxFiles = files.filter(f => f.name.endsWith('.docx'))
@@ -65,6 +78,9 @@ export default function OutputsTab({ lang }: Props) {
               <button className="btn btn-secondary" style={{ padding: '6px 14px' }} onClick={() => download(f.path)}>
                 {t('download_btn', lang)}
               </button>
+              <button className="btn btn-secondary" style={{ padding: '6px 14px', color: '#dc2626' }} onClick={() => deleteFile(f)}>
+                {t('delete_btn', lang)}
+              </button>
             </div>
           ))}
         </div>
@@ -80,6 +96,9 @@ export default function OutputsTab({ lang }: Props) {
               <span className="output-size">{formatSize(f.size)}</span>
               <button className="btn btn-primary" style={{ padding: '6px 14px' }} onClick={() => download(f.path)}>
                 {t('download_btn', lang)}
+              </button>
+              <button className="btn btn-secondary" style={{ padding: '6px 14px', color: '#dc2626' }} onClick={() => deleteFile(f)}>
+                {t('delete_btn', lang)}
               </button>
             </div>
           ))}

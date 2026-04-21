@@ -19,6 +19,20 @@ from backend.ingestion.excel_parser import CostStepGroup
 OFFER_FONT = "Campton Book"
 
 
+def _parse_project_date(value: str) -> date:
+    if not value:
+        return date.today()
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        pass
+    try:
+        day, month, year = (int(part) for part in value.split("."))
+        return date(year, month, day)
+    except Exception:
+        return date.today()
+
+
 def _set_default_font(doc: Document, font_name: str):
     """Apply font_name as the document-wide default for all styles and docDefaults."""
     # Document-level run defaults (w:docDefaults/w:rPrDefault)
@@ -272,7 +286,8 @@ def build_offer_document(
 
     _set_default_font(doc, OFFER_FONT)
     _setup_header_footer(doc, language, TEMPLATES_DIR / "LINK_LOGO.png")
-    doc_date = project.document_date or date.today().isoformat()
+    _raw_date = _parse_project_date(project.document_date)
+    doc_date = f"{_raw_date.day}.{_raw_date.month}.{_raw_date.year}"
 
     # ── Header block ─────────────────────────────────────────────────────────
     _add_paragraph(doc, doc_date)
@@ -368,8 +383,9 @@ def build_offer_document(
 
     # ── Section 10 — Payment Terms ────────────────────────────────────────────
     _add_heading(doc, "10. Payment Terms", 1)
-    _doc_date = date.fromisoformat(project.document_date) if project.document_date else date.today()
-    _deadline = (_doc_date + timedelta(weeks=2)).strftime("%d.%m.%Y")
+    _doc_date = _parse_project_date(project.document_date)
+    _dl = _doc_date + timedelta(weeks=2)
+    _deadline = f"{_dl.day}.{_dl.month}.{_dl.year}"
     payment_terms = (
         f"Hintoihin lisätään 25,5% arvonlisävero laskutettaessa. Maksuehto 14pv netto. "
         f"Tuntiveloitusperusteiset työt laskutetaan kuukausittain toteuman mukaan. "

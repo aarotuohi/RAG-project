@@ -38,6 +38,8 @@ function getSectionLabels(lang: Lang): Record<string, string> {
 const fmtEur = (v: number) =>
   Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + '€'
 
+const formatDateFi = (d: Date) => `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`
+
 const EMPTY: ProjectData = {
   first_name:'', last_name:'', company_name:'', address:'', postal_code:'',
   project_name:'', project_number:'', salesperson_name:'', document_date:'',
@@ -61,7 +63,7 @@ function Field({ label, name, value, onChange, full=false, area=false }: {
 }
 
 export default function NewOfferTab({ lang }: Props) {
-  const [project, setProject] = useState<ProjectData>({ ...EMPTY, document_date: new Date().toISOString().slice(0,10) })
+  const [project, setProject] = useState<ProjectData>({ ...EMPTY, document_date: formatDateFi(new Date()) })
   const [extracting, setExtracting] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [events, setEvents] = useState<ProgressEvent[]>([])
@@ -144,7 +146,7 @@ export default function NewOfferTab({ lang }: Props) {
         return
       }
       const data: Partial<ProjectData> = await r.json()
-      setProject(p => ({ ...p, ...data, document_date: p.document_date || new Date().toISOString().slice(0,10) }))
+      setProject(p => ({ ...p, ...data, document_date: p.document_date || formatDateFi(new Date()) }))
       setStep('form')
     } catch {
       setExtractError('Could not reach the backend.')

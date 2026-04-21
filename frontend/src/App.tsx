@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import NewOfferTab from './tabs/NewOfferTab'
 import OutputsTab from './tabs/OutputsTab'
+import DataTab from './tabs/DataTab'
 import { t, type Lang } from './i18n'
 
-type Tab = 'new-offer' | 'outputs'
+type Tab = 'new-offer' | 'outputs' | 'data'
 
 interface Status {
   ollama_running: boolean
@@ -42,13 +43,14 @@ export default function App() {
   const tabLabels: Record<Tab, string> = {
     'new-offer': t('nav_new_offer', lang),
     'outputs':   t('nav_outputs', lang),
+    'data':      t('nav_data', lang),
   }
 
   return (
     <div className="app">
       <nav className="nav">
         <span className="nav-brand">AISALES</span>
-        {(['new-offer', 'outputs'] as Tab[]).map(tab_ => (
+        {(['new-offer', 'outputs', 'data'] as Tab[]).map(tab_ => (
           <button
             key={tab_}
             className={`nav-tab${tab === tab_ ? ' active' : ''}`}
@@ -84,8 +86,15 @@ export default function App() {
       </nav>
       <main className="content">
         <div className="tab-content">
-          {tab === 'new-offer' && <NewOfferTab lang={lang} />}
-          {tab === 'outputs' && <OutputsTab lang={lang} />}
+          <div style={{ display: tab === 'new-offer' ? 'block' : 'none' }}>
+            <NewOfferTab lang={lang} />
+          </div>
+          <div style={{ display: tab === 'outputs' ? 'block' : 'none' }}>
+            <OutputsTab lang={lang} isActive={tab === 'outputs'} />
+          </div>
+          <div style={{ display: tab === 'data' ? 'block' : 'none' }}>
+            <DataTab lang={lang} isActive={tab === 'data'} />
+          </div>
         </div>
       </main>
     </div>

@@ -205,7 +205,9 @@ def _get_company_content(company_name: str) -> str:
 
 
 _BACKGROUND_PROMPT = PromptTemplate.from_template(
-    """You are writing the opening paragraph of Section 1 (Background and Goals) of a professional B2B sales offer document.
+    """{lang_note}
+
+You are writing the opening paragraph of Section 1 (Background and Goals) of a professional B2B sales offer document.
 
 Using the website content and project information below, produce exactly three sentences in this order:
 
@@ -224,11 +226,13 @@ Website content:
 
 Project goals: {goals}
 
-Opening paragraph:"""
+Opening paragraph (in the language specified above):"""
 )
 
 _GOALS_PROMPT = PromptTemplate.from_template(
-    """You are writing Section 1 (Background and Goals) of a professional B2B sales offer document.
+    """{lang_note}
+
+You are writing Section 1 (Background and Goals) of a professional B2B sales offer document.
 
 Using the project information below, produce the section in this exact structure:
 
@@ -246,7 +250,7 @@ Project name: {other_notes}
 Goals: {goals}
 Constraints: {constraints}
 
-Section 1 text:"""
+Section 1 text (in the language specified above):"""
 )
 
 
@@ -265,11 +269,12 @@ def generate_section1(project: ProjectData, enable_web_search: bool = True, lang
             if not results:
                 raise ValueError("No content retrieved from company website")
             prompt = _BACKGROUND_PROMPT.format(
+                lang_note=lang_note,
                 company_name=project.company_name,
                 project_name=project.project_name or "the Project",
                 goals=project.goals or "Not specified",
                 search_results=results[:5000],
-            ) + f"\n\n{lang_note}"
+            )
             company_background = llm.invoke(prompt).strip()
         except Exception as e:
             company_background = (
@@ -286,10 +291,11 @@ def generate_section1(project: ProjectData, enable_web_search: bool = True, lang
     goals_text = ""
     if project.goals or project.constraints:
         prompt = _GOALS_PROMPT.format(
+            lang_note=lang_note,
             goals=project.goals or "Not specified",
             constraints=project.constraints or "Not specified",
             other_notes=project.other_notes or "None",
-        ) + f"\n\n{lang_note}"
+        )
         goals_text = llm.invoke(prompt).strip()
     else:
         goals_text = "[Goals and constraints not found in transcript. Please fill in manually.]"
