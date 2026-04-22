@@ -106,6 +106,8 @@ def build_cost_excel(project: ProjectData, section2: dict) -> Path:
     current_row = len(meta_rows) + 2  # blank separator row
 
     # ── Phase blocks ──────────────────────────────────────────────────────────
+    phase_subtotal_rows: list[int] = []   # E-col subtotal row per phase (for summary)
+
     for phase_num, sg in enumerate(steps, start=1):
         phase_label = f"Vaihe {phase_num}. {sg.name}"
 
@@ -119,26 +121,37 @@ def build_cost_excel(project: ProjectData, section2: dict) -> Path:
                   fill=_PHASE_FILL, align="right")
         current_row += 1
 
-        # Sub-step rows
+        # Sub-step rows — numeric C & D so formulas work when user edits them
+        sub_step_start = current_row
         for idx, ss in enumerate(sg.sub_steps, start=1):
             effective_hours = round(ss.hours * ss.persons, 1)
-            persons_note = f" (×{ss.persons})" if ss.persons > 1 else ""
+            name = ss.name + (f"  (×{ss.persons} hlö)" if ss.persons > 1 else "")
             _set_cell(ws, current_row, 1, idx, align="center")
-            _set_cell(ws, current_row, 2, ss.name, wrap=True)
-            _set_cell(ws, current_row, 3, f"{ss.hourly_rate:.0f}€/h", align="right")
-            _set_cell(ws, current_row, 4, f"{effective_hours:.1f} h{persons_note}", align="right")
-            _set_cell(ws, current_row, 5, round(ss.total, 2),
+            _set_cell(ws, current_row, 2, name, wrap=True)
+            # C: numeric hourly rate — user can edit; drives column E
+            _set_cell(ws, current_row, 3, ss.hourly_rate,
+                      number_format='#,##0 "€/h"', align="right")
+            # D: numeric hours — user can edit; drives column E and subtotal
+            _set_cell(ws, current_row, 4, effective_hours,
+                      number_format='#,##0.0 "h"', align="right")
+            # E: live formula = rate × hours
+            _set_cell(ws, current_row, 5, f"=C{current_row}*D{current_row}",
                       number_format='#,##0.00 "€"', align="right")
             current_row += 1
+        sub_step_end = current_row - 1
 
         # Phase subtotal row
         _set_cell(ws, current_row, 2, "Arvioidut työkustannukset yhteensä",
                   bold=True, fill=_TOTAL_FILL)
-        _set_cell(ws, current_row, 4, f"{sg.total_hours:.1f} h",
-                  bold=True, fill=_TOTAL_FILL, align="right")
-        _set_cell(ws, current_row, 5, round(sg.total_cost, 2),
+        _set_cell(ws, current_row, 4,
+                  f"=SUM(D{sub_step_start}:D{sub_step_end})",
+                  bold=True, fill=_TOTAL_FILL,
+                  number_format='#,##0.0 "h"', align="right")
+        _set_cell(ws, current_row, 5,
+                  f"=SUM(E{sub_step_start}:E{sub_step_end})",
                   bold=True, fill=_TOTAL_FILL,
                   number_format='#,##0.00 "€"', align="right")
+        phase_subtotal_rows.append(current_row)
         current_row += 1
 
         # Output row
@@ -154,21 +167,35 @@ def build_cost_excel(project: ProjectData, section2: dict) -> Path:
     _set_cell(ws, current_row, 5, "Hinta-arvio [€]", bold=True, fill=_SUMMARY_FILL, align="right")
     current_row += 1
 
-    for i, sg in enumerate(steps, start=1):
+    summary_rows: list[int] = []
+    for i, (sg, st_row) in enumerate(zip(steps, phase_subtotal_rows), start=1):
         _set_cell(ws, current_row, 1, i, align="center")
         _set_cell(ws, current_row, 2, f"Vaihe {i}: {sg.name}", wrap=True)
-        _set_cell(ws, current_row, 4, f"{sg.total_hours:.1f} h", align="right")
-        _set_cell(ws, current_row, 5, round(sg.total_cost, 2),
+        # Reference the phase subtotal cells so summary stays in sync
+        _set_cell(ws, current_row, 4, f"=D{st_row}",
+                  number_format='#,##0.0 "h"', align="right")
+        _set_cell(ws, current_row, 5, f"=E{st_row}",
                   number_format='#,##0.00 "€"', align="right")
+        summary_rows.append(current_row)
         current_row += 1
 
-    # Grand total row
-    total_hours = sum(sg.total_hours for sg in steps)
-    _set_cell(ws, current_row, 4, f"{total_hours:.1f} h",
-              bold=True, fill=_SUMMARY_FILL, align="right")
-    _set_cell(ws, current_row, 5, round(grand_total, 2),
-              bold=True, fill=_SUMMARY_FILL,
-              number_format='#,##0.00 "€"', align="right")
+    # Grand total row — SUM over all summary rows
+    if summary_rows:
+        _set_cell(ws, current_row, 4,
+                  f"=SUM(D{summary_rows[0]}:D{summary_rows[-1]})",
+                  bold=True, fill=_SUMMARY_FILL,
+                  number_format='#,##0.0 "h"', align="right")
+        _set_cell(ws, current_row, 5,
+                  f"=SUM(E{summary_rows[0]}:E{summary_rows[-1]})",
+                  bold=True, fill=_SUMMARY_FILL,
+                  number_format='#,##0.00 "€"', align="right")
+    else:
+        _set_cell(ws, current_row, 4, 0,
+                  bold=True, fill=_SUMMARY_FILL,
+                  number_format='#,##0.0 "h"', align="right")
+        _set_cell(ws, current_row, 5, 0,
+                  bold=True, fill=_SUMMARY_FILL,
+                  number_format='#,##0.00 "€"', align="right")
 
     # ── Save ──────────────────────────────────────────────────────────────────
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
