@@ -432,6 +432,6 @@ def build_offer_document(
     # ── Save ──────────────────────────────────────────────────────────────────
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     safe_project = (project.project_name or "offer").replace(" ", "_").replace("/", "-")[:40]
-    out_path = OUTPUTS_DIR / f"offer_{safe_project}_{date.today().isoformat()}.docx"
+    out_path = OUTPUTS_DIR / f"offer_{safe_project}_{doc_date}.docx"
     doc.save(str(out_path))
     return out_path

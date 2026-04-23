@@ -2,7 +2,10 @@
 Re-index cost history files into ChromaDB.
 
 Deletes the existing 'cost_history' collection and re-ingests every
-supported file from data/documents/cost_history/ with the current parser.
+supported file from data/documents/cost_history/ (and all sub-folders)
+with the current parser.  Each sub-folder is treated as a project category
+(e.g. software_development/, electronics_design/) and the folder name is
+stored as 'project_category' metadata on every chunk.
 
 Run from the project root:
     python reindex_cost_history.py
@@ -23,20 +26,22 @@ def main():
     delete_collection(CHROMA_COLLECTION_COST)
     print("  Done.")
 
+    # rglob scans all sub-folders (one sub-folder = one project category)
     files = [
-        f for f in COST_HISTORY_DIR.iterdir()
+        f for f in COST_HISTORY_DIR.rglob("*")
         if f.is_file()
         and f.suffix.lower() in SUPPORTED
         and not f.name.startswith("~$")   # skip Office temp/lock files
     ]
     if not files:
-        print("No files found in cost_history directory. Nothing to index.")
+        print("No files found in cost_history directory or its sub-folders. Nothing to index.")
         return
 
     total_chunks = 0
     for f in sorted(files):
+        rel = f.relative_to(COST_HISTORY_DIR)
         chunks = index_file(f, CHROMA_COLLECTION_COST)
-        print(f"  {f.name:<50} → {chunks} chunks")
+        print(f"  {str(rel):<60} → {chunks} chunks")
         total_chunks += chunks
 
     print(f"\nDone. {len(files)} file(s), {total_chunks} total chunks indexed.")

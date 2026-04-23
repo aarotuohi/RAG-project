@@ -92,14 +92,21 @@ def _clean_json(text: str) -> str:
 
 def _best_category(query: str, categories: list[str]) -> str | None:
     """
-    Return the best matching category folder name for the given project query,
-    or None if no category has any token overlap (falls back to searching all).
+    Return the best matching category folder name for the given project query.
+
+    Two-stage approach:
+    1. Fast keyword/token overlap check against folder names.
+    2. If no keyword match, run a per-category embedding similarity search and
+       return the folder whose chunks are most semantically similar to the query.
+    Returns None only when the collection is empty or unreachable (falls back
+    to searching all categories).
     """
     if not categories:
         return None
     if len(categories) == 1:
         return categories[0]
 
+    # Stage 1: keyword token overlap
     query_tokens = set(re.sub(r"[^a-z\s]", "", query.lower()).split())
     best_cat, best_score = None, 0
     for cat in categories:
@@ -107,7 +114,25 @@ def _best_category(query: str, categories: list[str]) -> str | None:
         score = len(query_tokens & cat_tokens)
         if score > best_score:
             best_score, best_cat = score, cat
-    return best_cat if best_score > 0 else None
+    if best_score > 0:
+        return best_cat
+
+    # Stage 2: embedding similarity fallback — query each category with k=1
+    # and pick the folder whose best chunk has the lowest cosine distance.
+    try:
+        collection = get_collection(CHROMA_COLLECTION_COST)
+        best_cat, best_dist = None, float("inf")
+        for cat in categories:
+            results = collection.similarity_search_with_score(
+                query, k=1, filter={"project_category": cat}
+            )
+            if results:
+                _, dist = results[0]
+                if dist < best_dist:
+                    best_dist, best_cat = dist, cat
+        return best_cat
+    except Exception:
+        return None
 
 
 def _retrieve_similar_projects(description: str, k: int = 8, project_category: str | None = None) -> str:

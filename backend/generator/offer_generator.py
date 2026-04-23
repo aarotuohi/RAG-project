@@ -99,7 +99,7 @@ def generate_offer(
         xlsx_path = None
         if generate_cost_table:
             try:
-                xlsx_path = build_cost_excel(project, sections["section2"])
+                xlsx_path = build_cost_excel(project, sections["section2"], language=language)
             except Exception as e:
                 yield {"status": "warning", "section": "docx", "message": f"Excel export failed: {e}"}
 
