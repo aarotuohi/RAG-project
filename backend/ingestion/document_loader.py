@@ -82,20 +82,13 @@ def _load_excel_as_text(path: Path) -> list[Document]:
     """
     import pandas as pd
 
-    # Determine project category from parent sub-folder (e.g. cost_history/software_development/)
-    try:
-        from backend.config import COST_HISTORY_DIR
-        rel = path.parent.relative_to(COST_HISTORY_DIR)
-        project_category = rel.parts[0] if rel.parts else ""
-    except (ValueError, ImportError):
-        project_category = ""
 
     # Try structured cost-estimation parse first
     try:
         from backend.ingestion.excel_parser import (
             parse_excel, parse_excel_metadata, steps_by_phase, grand_total,
         )
-        sheet_steps = parse_excel(path)
+        sheet_steps, phase_outputs = parse_excel(path)
         if sheet_steps:
             metadata = parse_excel_metadata(path)
 
@@ -141,11 +134,13 @@ def _load_excel_as_text(path: Path) -> list[Document]:
                         )
                     phase_total = round(sum(s.total for s in phase_steps), 2)
 
+                    phase_output = phase_outputs.get(sheet, {}).get(phase_name, "")
                     prefix = (notes_prefix if phase_idx == 0 else "") + (header + "\n" if header else "")
                     text = (
                         f"{prefix}"
                         f"Phase: {phase_name} | Phase total: {phase_total}€ | Project grand total: {project_total}€\n"
                         + "\n".join(step_lines)
+                        + (f"\nOutput: {phase_output}" if phase_output else "")
                     )
                     docs.append(Document(
                         page_content=text,
@@ -156,7 +151,6 @@ def _load_excel_as_text(path: Path) -> list[Document]:
                             "type": "xlsx",
                             "structured": True,
                             "pre_chunked": True,  # skip RecursiveCharacterTextSplitter
-                            "project_category": project_category,
                         },
                     ))
             return docs
@@ -169,7 +163,7 @@ def _load_excel_as_text(path: Path) -> list[Document]:
     for sheet in xl.sheet_names:
         df = xl.parse(sheet).fillna("")
         text = f"Sheet: {sheet}\n" + df.to_string(index=False)
-        docs.append(Document(page_content=text, metadata={"source": str(path), "sheet": sheet, "type": "xlsx", "project_category": project_category}))
+        docs.append(Document(page_content=text, metadata={"source": str(path), "sheet": sheet, "type": "xlsx"}))
     return docs
 
 

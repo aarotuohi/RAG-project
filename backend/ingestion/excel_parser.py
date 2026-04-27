@@ -158,7 +158,7 @@ def parse_excel_metadata(file_path: Path) -> dict[str, str]:
         if not vals:
             continue
         # Stop at the first phase-header row (any column may contain it)
-        if any(re.match(r"vaihe\s*\d+", v, re.IGNORECASE) for v in vals):
+        if any(re.match(r"(vaihe|phase|tehtävä)\s*[\d:]", v, re.IGNORECASE) for v in vals):
             break
         # Try label in col 0 (value in col 1), then label in col 1 (value in col 2)
         for label_idx, value_idx in ((0, 1), (1, 2)):
@@ -187,9 +187,11 @@ def _latest_rev_sheet(sheet_names: list[str]) -> str | None:
     return rev_sheets[-1]
 
 
-def parse_excel(file_path: Path) -> dict[str, list[CostStep]]:
+def parse_excel(file_path: Path) -> tuple[dict[str, list[CostStep]], dict[str, dict[str, str]]]:
     """
-    Parse an Excel file and return {sheet_name: [CostStep, ...]}.
+    Parse an Excel file and return a tuple of:
+      - {sheet_name: [CostStep, ...]}
+      - {sheet_name: {phase_name: output_text}}  (Output/Tuotos rows per phase)
 
     When the workbook contains revision sheets (revA, revB, revC …) only the
     latest revision (alphabetically last suffix) is parsed.  This prevents
@@ -197,6 +199,7 @@ def parse_excel(file_path: Path) -> dict[str, list[CostStep]]:
     current one.
     """
     result: dict[str, list[CostStep]] = {}
+    phase_out: dict[str, dict[str, str]] = {}
     xl = pd.ExcelFile(str(file_path))
 
     latest_rev = _latest_rev_sheet(xl.sheet_names)
@@ -214,14 +217,27 @@ def parse_excel(file_path: Path) -> dict[str, list[CostStep]]:
             first = row_vals[0] if row_vals else ""
 
             # ── Phase section header row ──────────────────────────────────────
+            # Matches: Vaihe N, PHASE N:, Tehtävä N, Tehtävä: …
             # Scan all columns — merged cells may push the label past column 0
             phase_cell = next(
-                (v for v in row_vals if re.match(r"vaihe\s*\d+", v, re.IGNORECASE)),
+                (v for v in row_vals if re.match(r"(vaihe|phase|tehtävä)\s*[\d:]", v, re.IGNORECASE)),
                 None,
             )
             if phase_cell and not re.match(r"^\d+\.?\d*$", first):
                 current_phase = phase_cell
                 col_map = _detect_col_indices(row_vals)
+                continue
+
+            # ── Output / deliverable row — ends the phase chunk ───────────────
+            # Matches: "Output: …", "Tuotos: …" in any cell of the row
+            output_cell = next(
+                (v for v in row_vals if re.match(r"(output|tuotos)\s*:", v, re.IGNORECASE)),
+                None,
+            )
+            if output_cell and current_phase:
+                # Strip the "Output:" / "Tuotos:" label prefix before storing
+                clean = re.sub(r"^(output|tuotos)\s*:\s*", "", output_cell, flags=re.IGNORECASE).strip()
+                phase_out.setdefault(sheet_name, {})[current_phase] = clean
                 continue
 
             # ── Skip non-data rows (totals, summaries, empty, metadata) ───────
@@ -284,7 +300,7 @@ def parse_excel(file_path: Path) -> dict[str, list[CostStep]]:
         if steps:
             result[sheet_name] = steps
 
-    return result
+    return result, phase_out
 
 
 def grand_total(steps: list[CostStep]) -> float:

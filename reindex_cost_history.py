@@ -26,7 +26,6 @@ def main():
     delete_collection(CHROMA_COLLECTION_COST)
     print("  Done.")
 
-    # rglob scans all sub-folders (one sub-folder = one project category)
     files = [
         f for f in COST_HISTORY_DIR.rglob("*")
         if f.is_file()
@@ -40,8 +39,11 @@ def main():
     total_chunks = 0
     for f in sorted(files):
         rel = f.relative_to(COST_HISTORY_DIR)
-        chunks = index_file(f, CHROMA_COLLECTION_COST)
-        print(f"  {str(rel):<60} → {chunks} chunks")
+        # Sub-folder name becomes the project_category; files in the root get no category
+        category = rel.parts[0] if len(rel.parts) > 1 else None
+        extra = {"project_category": category} if category else {}
+        chunks = index_file(f, CHROMA_COLLECTION_COST, extra_metadata=extra or None)
+        print(f"  {str(rel):<60} → {chunks} chunks  [category: {category or '(root)'}]")
         total_chunks += chunks
 
     print(f"\nDone. {len(files)} file(s), {total_chunks} total chunks indexed.")

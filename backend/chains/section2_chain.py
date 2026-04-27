@@ -12,7 +12,7 @@ from langchain_core.prompts import PromptTemplate
 
 from backend.ollama_client import get_llm
 from backend.vectorstore.chroma_client import get_collection
-from backend.config import CHROMA_COLLECTION_COST, WORK_CATEGORIES, CATEGORY_RATES, get_cost_history_categories
+from backend.config import CHROMA_COLLECTION_COST, WORK_CATEGORIES, CATEGORY_RATES
 from backend.chains.extraction_chain import ProjectData
 from backend.ingestion.excel_parser import CostSubStep, CostStepGroup
 
@@ -90,69 +90,55 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
-def _best_category(query: str, categories: list[str]) -> str | None:
+def _detect_project_category(description: str, k: int = 10) -> list[str]:
     """
-    Return the best matching category folder name for the given project query.
+    Query ChromaDB without any filter and vote on 'project_category' metadata
+    among the top-k most similar chunks.
 
-    Two-stage approach:
-    1. Fast keyword/token overlap check against folder names.
-    2. If no keyword match, run a per-category embedding similarity search and
-       return the folder whose chunks are most semantically similar to the query.
-    Returns None only when the collection is empty or unreachable (falls back
-    to searching all categories).
+    Returns:
+      - [best_category]          — one clear winner (strictly more votes than second)
+      - [first, second]          — tie at the top; use both as fallback
+      - []                       — no categories in collection (flat layout)
     """
-    if not categories:
-        return None
-    if len(categories) == 1:
-        return categories[0]
-
-    # Stage 1: keyword token overlap
-    query_tokens = set(re.sub(r"[^a-z\s]", "", query.lower()).split())
-    best_cat, best_score = None, 0
-    for cat in categories:
-        cat_tokens = set(re.sub(r"[_\-]", " ", cat).lower().split())
-        score = len(query_tokens & cat_tokens)
-        if score > best_score:
-            best_score, best_cat = score, cat
-    if best_score > 0:
-        return best_cat
-
-    # Stage 2: embedding similarity fallback — query each category with k=1
-    # and pick the folder whose best chunk has the lowest cosine distance.
     try:
         collection = get_collection(CHROMA_COLLECTION_COST)
-        best_cat, best_dist = None, float("inf")
-        for cat in categories:
-            results = collection.similarity_search_with_score(
-                query, k=1, filter={"project_category": cat}
-            )
-            if results:
-                _, dist = results[0]
-                if dist < best_dist:
-                    best_dist, best_cat = dist, cat
-        return best_cat
+        results = collection.similarity_search_with_score(description, k=k)
+        counts: dict[str, int] = {}
+        for doc, _ in results:
+            cat = doc.metadata.get("project_category") or ""
+            if cat:
+                counts[cat] = counts.get(cat, 0) + 1
+        if not counts:
+            return []
+        ranked = sorted(counts, key=lambda c: counts[c], reverse=True)
+        # Clear winner when top has strictly more votes than second place
+        if len(ranked) == 1 or counts[ranked[0]] > counts[ranked[1]]:
+            return ranked[:1]
+        # Tied at the top — return both as fallback
+        return ranked[:2]
     except Exception:
-        return None
+        return []
 
 
-def _retrieve_similar_projects(description: str, k: int = 8, project_category: str | None = None) -> str:
+def _retrieve_similar_projects(description: str, k: int = 8, categories: list[str] | None = None) -> str:
     """
     Retrieve the most relevant historical cost phases from ChromaDB.
 
-    Runs one query per expertise area so that phase-level chunks (each chunk
-    is one project phase) are matched by the specific work type they describe,
-    not just by the overall project title.  Results are score-filtered and
-    deduplicated before being returned to the LLM.
-
-    If *project_category* is given, only chunks from that sub-folder are searched.
+    *categories* controls which sub-folders are searched:
+      - 1 category  → exact metadata filter on 'project_category'
+      - 2 categories → '$in' filter covering both sub-folders (fallback)
+      - None / []   → no filter; searches the entire collection
     """
     try:
         collection = get_collection(CHROMA_COLLECTION_COST)
 
-        # Optional category filter (matches project_category metadata stored at ingest time)
-        where_filter: dict | None = (
-            {"project_category": project_category} if project_category else None
-        )
+        # Build metadata filter from the detected categories.
+        if categories and len(categories) == 1:
+            cat_filter: dict | None = {"project_category": categories[0]}
+        elif categories and len(categories) >= 2:
+            cat_filter = {"project_category": {"$in": categories[:2]}}
+        else:
+            cat_filter = None
 
         # Build a list of targeted sub-queries: overall description + one per
         # expertise keyword (comma/semicolon separated).
@@ -164,7 +150,7 @@ def _retrieve_similar_projects(description: str, k: int = 8, project_category: s
         candidates: list[tuple[float, str, str]] = []
 
         for query in queries:
-            results = collection.similarity_search_with_score(query, k=k, filter=where_filter)
+            results = collection.similarity_search_with_score(query, k=k, filter=cat_filter)
             for doc, score in results:
                 content = doc.page_content
                 if content in seen_content:
@@ -212,10 +198,8 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
         f"{project.material_deliverables}"
     )
 
-    # Pick the most relevant cost-history sub-folder for this project
-    categories = get_cost_history_categories()
-    best_cat = _best_category(description_query, categories)
-    historical_data = _retrieve_similar_projects(description_query, project_category=best_cat)
+    detected_category = _detect_project_category(description_query)
+    historical_data = _retrieve_similar_projects(description_query, categories=detected_category or None)
 
     # --- Step 1: Generate description paragraph ---
     desc_prompt = _DESCRIPTION_PROMPT.format(

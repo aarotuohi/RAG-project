@@ -20,7 +20,7 @@ from backend.config import (
     TRANSCRIPTS_DIR,
     CHROMA_COLLECTION_COST, CHROMA_COLLECTION_CV, CHROMA_COLLECTION_BOILER, CHROMA_COLLECTION_CONTACTS,
     OUTPUTS_DIR, SETTINGS_FILE,
-    COST_HISTORY_DIR, get_cost_history_categories,
+    COST_HISTORY_DIR,
 )
 
 
@@ -86,36 +86,6 @@ def get_status():
             "contacts":     collection_count(CHROMA_COLLECTION_CONTACTS),
         },
     }
-
-
-@router.get("/cost-history-folders")
-def list_cost_history_folders():
-    """List available cost-history category sub-folders and the files inside each."""
-    result = []
-    for cat in get_cost_history_categories():
-        folder = COST_HISTORY_DIR / cat
-        files = [
-            {"name": f.name, "size": f.stat().st_size}
-            for f in sorted(folder.iterdir())
-            if f.is_file() and f.suffix.lower() in (".xlsx", ".xls")
-        ]
-        result.append({"folder": cat, "files": files})
-    return result
-
-
-class CreateFolderRequest(BaseModel):
-    folder_name: str
-
-
-@router.post("/cost-history-folders")
-def create_cost_history_folder(req: CreateFolderRequest):
-    """Create a new cost-history category sub-folder."""
-    name = req.folder_name.strip().replace(" ", "_").lower()
-    if not name or "/" in name or "\\" in name or name.startswith("."):
-        raise HTTPException(status_code=400, detail="Invalid folder name")
-    target = COST_HISTORY_DIR / name
-    target.mkdir(parents=True, exist_ok=True)
-    return {"folder": name, "created": True}
 
 
 # ── Transcript Extraction ─────────────────────────────────────────────────────

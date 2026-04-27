@@ -21,24 +21,12 @@ TRANSCRIPTS_DIR  = DOCUMENTS_DIR / "transcripts"
 
 SETTINGS_FILE = BASE_DIR / "settings.json"
 
-# Default cost-history category sub-folders (project type buckets)
-COST_HISTORY_DEFAULT_CATEGORIES = ["software_development", "electronics_design"]
-
 # Create all directories on import
 for _d in [
     DOCUMENTS_DIR, VECTORSTORE_DIR, OUTPUTS_DIR,
     COST_HISTORY_DIR, CV_DIR, CONTACTS_DIR, BOILERPLATE_DIR, TRANSCRIPTS_DIR,
 ]:
     _d.mkdir(parents=True, exist_ok=True)
-
-# Ensure default category sub-folders exist
-for _cat in COST_HISTORY_DEFAULT_CATEGORIES:
-    (COST_HISTORY_DIR / _cat).mkdir(parents=True, exist_ok=True)
-
-
-def get_cost_history_categories() -> list[str]:
-    """Return names of sub-folders inside COST_HISTORY_DIR (one per project category)."""
-    return sorted(d.name for d in COST_HISTORY_DIR.iterdir() if d.is_dir())
 
 # Ollama settings
 OLLAMA_BASE_URL    = os.environ.get("OLLAMA_BASE_URL",   "http://localhost:11434")
