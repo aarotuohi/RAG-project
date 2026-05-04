@@ -41,10 +41,89 @@ def _load_plaintext(path: Path) -> list[Document]:
     return [Document(page_content=text, metadata={"source": str(path), "type": path.suffix.lstrip(".")})]
 
 
+def _split_pdf_by_phase(text: str) -> list[str]:
+    """
+    Split PDF text into phase-based chunks.
+
+    A new chunk begins at any line whose first significant token matches a
+    phase/task keyword (VAIHE, Tehtävä, PHASE, Task, Prototyypin,
+    mustannuskustannusarvi and their case variants).
+    A chunk closes *inclusively* at the nearest following line that contains
+    the word 'output' (case-insensitive) OR a line that contains all three
+    words 'Arvioidut', 'materiaalikustannukset', and 'yhteensä'.  If no end
+    line is found the chunk runs until the next start keyword (or end of
+    document).
+
+    Lines that appear before the very first start keyword are collected as a
+    project header and prepended to every chunk so each chunk is self-contained.
+
+    Returns an empty list when no phase structure is detected (caller falls back
+    to RecursiveCharacterTextSplitter).
+    """
+    import re
+
+    # Only match when the keyword is the first significant token on the line
+    # (after optional whitespace/tabs) to avoid false positives inside task descriptions.
+    START = re.compile(
+        r'^\s*(VAIHE|PHASE|Tehtävä|Task|Prototyypin|mustannuskustannusarvio)\b',
+        re.IGNORECASE,
+    )
+    # A chunk closes at a line containing 'output' OR at a line that contains
+    # all three words: Arvioidut + materiaalikustannukset + yhteensä.
+    END_OUTPUT = re.compile(r'\boutput\b', re.IGNORECASE)
+    END_ARVIO  = re.compile(
+        r'(?=.*\bArvioidut\b)(?=.*\bmateriaalikustannukset\b)(?=.*\byhteensä\b)',
+        re.IGNORECASE,
+    )
+
+    def _is_end(line: str) -> bool:
+        return bool(END_OUTPUT.search(line) or END_ARVIO.search(line))
+
+    lines = text.splitlines()
+
+    # Find the index of the first start-keyword line
+    first_start = next((i for i, ln in enumerate(lines) if START.search(ln)), None)
+    if first_start is None:
+        return []  # no phase structure — caller uses standard splitter
+
+    header = "\n".join(lines[:first_start]).strip()
+
+    chunks: list[str] = []
+    current: list[str] = []
+
+    for line in lines[first_start:]:
+        if START.search(line):
+            # Flush any open chunk (phase with no output line)
+            if current:
+                body = "\n".join(current).strip()
+                chunks.append((header + "\n" + body).strip() if header else body)
+            current = [line]
+        else:
+            current.append(line)
+            if _is_end(line):
+                # Close chunk at the end line
+                body = "\n".join(current).strip()
+                chunks.append((header + "\n" + body).strip() if header else body)
+                current = []
+
+    # Flush any remaining open chunk
+    if current:
+        body = "\n".join(current).strip()
+        chunks.append((header + "\n" + body).strip() if header else body)
+
+    return [c for c in chunks if c]
+
+
 def _load_pdf_as_text(path: Path) -> list[Document]:
     """
-    Extract text from a PDF using Docling and return as a Document for standard
-    RecursiveCharacterTextSplitter splitting (same as the Excel fallback path).
+    Extract text from a PDF using Docling.
+
+    If the text contains a phase structure (VAIHE / Tehtävä / PHASE / Task
+    start keywords and 'output' end lines), it is split into phase chunks
+    (pre_chunked=True) — the same logical structure as the Excel parser.
+
+    Otherwise a single Document is returned and RecursiveCharacterTextSplitter
+    handles splitting downstream.
     """
     from docling.document_converter import DocumentConverter
 
@@ -53,6 +132,18 @@ def _load_pdf_as_text(path: Path) -> list[Document]:
     text = result.document.export_to_markdown().strip()
     if not text:
         return []
+
+    phase_chunks = _split_pdf_by_phase(text)
+    if phase_chunks:
+        return [
+            Document(
+                page_content=chunk,
+                metadata={"source": str(path), "type": "pdf", "pre_chunked": True},
+            )
+            for chunk in phase_chunks
+        ]
+
+    # No phase structure — fall back to standard splitter
     return [Document(page_content=text, metadata={"source": str(path), "type": "pdf"})]
 
 
