@@ -12,7 +12,7 @@ from backend.config import CHUNK_SIZE, CHUNK_OVERLAP
 from backend.vectorstore.chroma_client import get_collection
 
 # File types handled by Docling (rich formats only)
-_DOCLING_TYPES = {".docx", ".pptx", ".pdf"}
+_DOCLING_TYPES = {".docx", ".pptx"}
 
 # Plain-text types read directly (no native-library dependency)
 _PLAINTEXT_TYPES = {".txt", ".md"}
@@ -25,6 +25,8 @@ def load_file(file_path: Path) -> list[Document]:
         return _load_with_docling(file_path)
     elif suffix in _PLAINTEXT_TYPES:
         return _load_plaintext(file_path)
+    elif suffix == ".pdf":
+        return _load_pdf_as_text(file_path)
     elif suffix in (".xlsx", ".xls"):
         return _load_excel_as_text(file_path)
     else:
@@ -37,6 +39,21 @@ def _load_plaintext(path: Path) -> list[Document]:
     if not text:
         return []
     return [Document(page_content=text, metadata={"source": str(path), "type": path.suffix.lstrip(".")})]
+
+
+def _load_pdf_as_text(path: Path) -> list[Document]:
+    """
+    Extract text from a PDF using Docling and return as a Document for standard
+    RecursiveCharacterTextSplitter splitting (same as the Excel fallback path).
+    """
+    from docling.document_converter import DocumentConverter
+
+    converter = DocumentConverter()
+    result = converter.convert(str(path))
+    text = result.document.export_to_markdown().strip()
+    if not text:
+        return []
+    return [Document(page_content=text, metadata={"source": str(path), "type": "pdf"})]
 
 
 def _load_with_docling(path: Path) -> list[Document]:
@@ -202,12 +219,18 @@ async def index_url(url: str, collection_name: str, extra_metadata: dict | None 
     return len(chunks)
 
 
-def index_file(file_path: Path, collection_name: str, extra_metadata: dict | None = None) -> int:
+def index_file(file_path: Path, collection_name: str, extra_metadata: dict | None = None, skip_if_indexed: bool = False) -> int:
     """
     Load, chunk, and index a file into the specified ChromaDB collection.
     Returns the number of chunks added.
     Files parsed by Docling are already chunked (pre_chunked=True) and skip re-splitting.
+    Pass skip_if_indexed=True to skip files whose source path is already present in the collection.
     """
+    if skip_if_indexed:
+        from backend.vectorstore.chroma_client import source_exists
+        if source_exists(file_path, collection_name):
+            return 0
+
     raw_docs = load_file(file_path)
     if not raw_docs:
         return 0
@@ -231,12 +254,12 @@ def index_file(file_path: Path, collection_name: str, extra_metadata: dict | Non
     return len(chunks)
 
 
-def index_directory(directory: Path, collection_name: str, extra_metadata: dict | None = None) -> dict:
+def index_directory(directory: Path, collection_name: str, extra_metadata: dict | None = None, skip_if_indexed: bool = False) -> dict:
     """Index all supported files in a directory. Returns {filename: chunk_count}."""
     results = {}
     supported = {".docx", ".pptx", ".xlsx", ".xls", ".txt", ".md", ".pdf"}
     for f in directory.iterdir():
         if f.is_file() and f.suffix.lower() in supported and not f.name.startswith("~$"):
-            count = index_file(f, collection_name, extra_metadata)
+            count = index_file(f, collection_name, extra_metadata, skip_if_indexed=skip_if_indexed)
             results[f.name] = count
     return results

@@ -45,3 +45,14 @@ def collection_count(name: str) -> int:
         return col.count()
     except Exception:
         return 0
+
+
+def source_exists(file_path, collection_name: str) -> bool:
+    """Return True if at least one chunk with source==str(file_path) is already in the collection."""
+    client = get_chroma_client()
+    try:
+        col = client.get_collection(collection_name)
+        result = col.get(where={"source": str(file_path)}, limit=1, include=[])
+        return len(result["ids"]) > 0
+    except Exception:
+        return False
