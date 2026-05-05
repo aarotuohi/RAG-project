@@ -29,6 +29,7 @@ _NORMAL = Font(bold=False)
 _PHASE_FILL = PatternFill("solid", fgColor="D9E1F2")   # light blue — phase header
 _TOTAL_FILL = PatternFill("solid", fgColor="F2F2F2")   # light grey — subtotal rows
 _SUMMARY_FILL = PatternFill("solid", fgColor="BDD7EE")  # medium blue — summary
+_INTERNAL_FILL = PatternFill("solid", fgColor="EFEFEF")  # very light grey — internal calc (fixed-price)
 
 
 def _thin_border(bottom_only: bool = False) -> Border:
@@ -85,9 +86,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "col_price":        "Hinta-arvio [€]",
         "persons_note":     "hlö",
         "phase_subtotal":   "Arvioidut työkustannukset yhteensä",
+        "fixed_price_label": "Kiinteä hinta",
         "summary_header":   "Yhteensä",
         "summary_col_h":    "Tuntiarvio [h]",
         "summary_col_e":    "Hinta-arvio [€]",
+        "summary_col_fp":   "Kiinteä hinta [€]",
     },
     "en": {
         "sheet_title":      "Calculation",
@@ -104,9 +107,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "col_price":        "Price estimate [€]",
         "persons_note":     "pers",
         "phase_subtotal":   "Estimated labour costs total",
+        "fixed_price_label": "Fixed price",
         "summary_header":   "Total",
         "summary_col_h":    "Hours estimate [h]",
         "summary_col_e":    "Price estimate [€]",
+        "summary_col_fp":   "Fixed price [€]",
     },
 }
 
@@ -116,8 +121,13 @@ def build_cost_excel(project: ProjectData, section2: dict,
     """
     Build a laskentapohja-style Excel workbook from project info and section2
     cost data.  Saves to OUTPUTS_DIR and returns the file path.
+
+    For fixed-price projects the sub-step rate/hours rows are rendered as
+    internal (grey, italic) calculation rows and each phase shows a single
+    fixed-price row instead of the hourly subtotal.
     """
     t = _STRINGS.get(language, _STRINGS["fi"])
+    is_fixed = (section2.get("payment_type") or "").lower() == "fixed"
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -160,12 +170,17 @@ def build_cost_excel(project: ProjectData, section2: dict,
 
         # Phase header row
         _set_cell(ws, current_row, 2, phase_label, bold=True, fill=_PHASE_FILL)
-        _set_cell(ws, current_row, 3, t["col_rate"],  bold=True,
-                  fill=_PHASE_FILL, align="right")
-        _set_cell(ws, current_row, 4, t["col_hours"], bold=True,
-                  fill=_PHASE_FILL, align="right")
-        _set_cell(ws, current_row, 5, t["col_price"], bold=True,
-                  fill=_PHASE_FILL, align="right")
+        if is_fixed:
+            # Fixed-price: only show the fixed-price column header
+            _set_cell(ws, current_row, 5, t["fixed_price_label"], bold=True,
+                      fill=_PHASE_FILL, align="right")
+        else:
+            _set_cell(ws, current_row, 3, t["col_rate"],  bold=True,
+                      fill=_PHASE_FILL, align="right")
+            _set_cell(ws, current_row, 4, t["col_hours"], bold=True,
+                      fill=_PHASE_FILL, align="right")
+            _set_cell(ws, current_row, 5, t["col_price"], bold=True,
+                      fill=_PHASE_FILL, align="right")
         current_row += 1
 
         # Sub-step rows — numeric C & D so formulas work when user edits them
@@ -173,32 +188,55 @@ def build_cost_excel(project: ProjectData, section2: dict,
         for idx, ss in enumerate(sg.sub_steps, start=1):
             effective_hours = round(ss.hours * ss.persons, 1)
             name = ss.name + (f"  (×{ss.persons} {t['persons_note']})" if ss.persons > 1 else "")
-            _set_cell(ws, current_row, 1, idx, align="center")
-            _set_cell(ws, current_row, 2, name, wrap=True)
-            # C: numeric hourly rate — user can edit; drives column E
-            _set_cell(ws, current_row, 3, ss.hourly_rate,
-                      number_format='#,##0 \\\u20ac', align="right")
-            # D: numeric hours — user can edit; drives column E and subtotal
-            # decimal separator is locale-controlled: Finnish locale → comma (10,0 h)
-            _set_cell(ws, current_row, 4, effective_hours,
-                      number_format='#,##0.0 \\h', align="right")
-            # E: live formula = rate × hours
-            _set_cell(ws, current_row, 5, f"=C{current_row}*D{current_row}",
-                      number_format='#,##0.00', align="right")
+            if is_fixed:
+                # Render as internal/grey calculation rows (rate × hours still
+                # calculated so the phase fixed price can be a rounded version)
+                _set_cell(ws, current_row, 1, idx, align="center", fill=_INTERNAL_FILL)
+                cell_name = ws.cell(row=current_row, column=2, value=name)
+                cell_name.font = Font(italic=True, color="808080")
+                cell_name.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                cell_name.fill = _INTERNAL_FILL
+                _set_cell(ws, current_row, 3, ss.hourly_rate,
+                          number_format='#,##0 \\\u20ac', align="right", fill=_INTERNAL_FILL)
+                _set_cell(ws, current_row, 4, effective_hours,
+                          number_format='#,##0.0 \\h', align="right", fill=_INTERNAL_FILL)
+                _set_cell(ws, current_row, 5, f"=C{current_row}*D{current_row}",
+                          number_format='#,##0.00', align="right", fill=_INTERNAL_FILL)
+            else:
+                _set_cell(ws, current_row, 1, idx, align="center")
+                _set_cell(ws, current_row, 2, name, wrap=True)
+                # C: numeric hourly rate — user can edit; drives column E
+                _set_cell(ws, current_row, 3, ss.hourly_rate,
+                          number_format='#,##0 \\\u20ac', align="right")
+                # D: numeric hours — user can edit; drives column E and subtotal
+                _set_cell(ws, current_row, 4, effective_hours,
+                          number_format='#,##0.0 \\h', align="right")
+                # E: live formula = rate × hours
+                _set_cell(ws, current_row, 5, f"=C{current_row}*D{current_row}",
+                          number_format='#,##0.00', align="right")
             current_row += 1
         sub_step_end = current_row - 1
 
-        # Phase subtotal row
-        _set_cell(ws, current_row, 2, t["phase_subtotal"],
-                  bold=True, fill=_TOTAL_FILL)
-        _set_cell(ws, current_row, 4,
-                  f"=SUM(D{sub_step_start}:D{sub_step_end})",
-                  bold=True, fill=_TOTAL_FILL,
-                  number_format='#,##0.0 \\h', align="right")
-        _set_cell(ws, current_row, 5,
-                  f"=SUM(E{sub_step_start}:E{sub_step_end})",
-                  bold=True, fill=_TOTAL_FILL,
-                  number_format='#,##0.00', align="right")
+        # Phase subtotal / fixed-price row
+        if is_fixed:
+            phase_cost = round(sum(ss.hourly_rate * ss.hours * ss.persons for ss in sg.sub_steps), 2)
+            _set_cell(ws, current_row, 2, t["fixed_price_label"],
+                      bold=True, fill=_TOTAL_FILL)
+            # Fixed price = calculated cost (user can override the number directly)
+            _set_cell(ws, current_row, 5, phase_cost,
+                      bold=True, fill=_TOTAL_FILL,
+                      number_format='#,##0.00', align="right")
+        else:
+            _set_cell(ws, current_row, 2, t["phase_subtotal"],
+                      bold=True, fill=_TOTAL_FILL)
+            _set_cell(ws, current_row, 4,
+                      f"=SUM(D{sub_step_start}:D{sub_step_end})",
+                      bold=True, fill=_TOTAL_FILL,
+                      number_format='#,##0.0 \\h', align="right")
+            _set_cell(ws, current_row, 5,
+                      f"=SUM(E{sub_step_start}:E{sub_step_end})",
+                      bold=True, fill=_TOTAL_FILL,
+                      number_format='#,##0.00', align="right")
         phase_subtotal_rows.append(current_row)
         current_row += 1
 
@@ -211,36 +249,45 @@ def build_cost_excel(project: ProjectData, section2: dict,
 
     # ── Summary section ───────────────────────────────────────────────────────
     _set_cell(ws, current_row, 2, t["summary_header"],   bold=True, fill=_SUMMARY_FILL)
-    _set_cell(ws, current_row, 4, t["summary_col_h"],    bold=True, fill=_SUMMARY_FILL, align="right")
-    _set_cell(ws, current_row, 5, t["summary_col_e"],    bold=True, fill=_SUMMARY_FILL, align="right")
+    if is_fixed:
+        _set_cell(ws, current_row, 5, t["summary_col_fp"], bold=True, fill=_SUMMARY_FILL, align="right")
+    else:
+        _set_cell(ws, current_row, 4, t["summary_col_h"],    bold=True, fill=_SUMMARY_FILL, align="right")
+        _set_cell(ws, current_row, 5, t["summary_col_e"],    bold=True, fill=_SUMMARY_FILL, align="right")
     current_row += 1
 
     summary_rows: list[int] = []
     for i, (sg, st_row) in enumerate(zip(steps, phase_subtotal_rows), start=1):
         _set_cell(ws, current_row, 1, i, align="center")
         _set_cell(ws, current_row, 2, f"{t['phase']} {i}: {sg.name}", wrap=True)
-        # Reference the phase subtotal cells so summary stays in sync
-        _set_cell(ws, current_row, 4, f"=D{st_row}",
-                  number_format='#,##0.0', align="right")
-        _set_cell(ws, current_row, 5, f"=E{st_row}",
-                  number_format='#,##0.00', align="right")
+        if is_fixed:
+            # Reference the fixed-price cell directly (no hours column in summary)
+            _set_cell(ws, current_row, 5, f"=E{st_row}",
+                      number_format='#,##0.00', align="right")
+        else:
+            _set_cell(ws, current_row, 4, f"=D{st_row}",
+                      number_format='#,##0.0', align="right")
+            _set_cell(ws, current_row, 5, f"=E{st_row}",
+                      number_format='#,##0.00', align="right")
         summary_rows.append(current_row)
         current_row += 1
 
     # Grand total row — SUM over all summary rows
     if summary_rows:
-        _set_cell(ws, current_row, 4,
-                  f"=SUM(D{summary_rows[0]}:D{summary_rows[-1]})",
-                  bold=True, fill=_SUMMARY_FILL,
-                  number_format='#,##0.0', align="right")
+        if not is_fixed:
+            _set_cell(ws, current_row, 4,
+                      f"=SUM(D{summary_rows[0]}:D{summary_rows[-1]})",
+                      bold=True, fill=_SUMMARY_FILL,
+                      number_format='#,##0.0', align="right")
         _set_cell(ws, current_row, 5,
                   f"=SUM(E{summary_rows[0]}:E{summary_rows[-1]})",
                   bold=True, fill=_SUMMARY_FILL,
                   number_format='#,##0.00', align="right")
     else:
-        _set_cell(ws, current_row, 4, 0,
-                  bold=True, fill=_SUMMARY_FILL,
-                  number_format='#,##0.0', align="right")
+        if not is_fixed:
+            _set_cell(ws, current_row, 4, 0,
+                      bold=True, fill=_SUMMARY_FILL,
+                      number_format='#,##0.0', align="right")
         _set_cell(ws, current_row, 5, 0,
                   bold=True, fill=_SUMMARY_FILL,
                   number_format='#,##0.00', align="right")

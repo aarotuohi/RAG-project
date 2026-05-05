@@ -86,32 +86,60 @@ def _split_pdf_by_phase(text: str) -> list[str]:
     if first_start is None:
         return []  # no phase structure — caller uses standard splitter
 
-    header = "\n".join(lines[:first_start]).strip()
-
     chunks: list[str] = []
     current: list[str] = []
 
     for line in lines[first_start:]:
         if START.search(line):
-            # Flush any open chunk (phase with no output line)
+            # Flush any open chunk (phase with no end line found yet)
             if current:
-                body = "\n".join(current).strip()
-                chunks.append((header + "\n" + body).strip() if header else body)
+                chunks.append("\n".join(current).strip())
             current = [line]
         else:
             current.append(line)
             if _is_end(line):
-                # Close chunk at the end line
-                body = "\n".join(current).strip()
-                chunks.append((header + "\n" + body).strip() if header else body)
+                # Close chunk inclusively at the end line
+                chunks.append("\n".join(current).strip())
                 current = []
 
-    # Flush any remaining open chunk
+    # Flush any remaining open chunk (no end line found)
     if current:
-        body = "\n".join(current).strip()
-        chunks.append((header + "\n" + body).strip() if header else body)
+        chunks.append("\n".join(current).strip())
 
     return [c for c in chunks if c]
+
+
+def _docling_doc_to_text(docling_doc) -> str:
+    """
+    Convert a Docling document to plain text, preserving table data.
+
+    For each table, every row is rendered as a tab-separated line so that
+    numeric columns (Tuntihinta / hourly rate, Tuntiarvio / hours,
+    Hinta-arvio / cost) are kept alongside the task descriptions.
+    Text/heading elements are appended as-is.
+    Falls back to export_to_markdown() if document iteration is unavailable.
+    """
+    parts: list[str] = []
+    try:
+        for element, _level in docling_doc.iterate_items():
+            # Table items: render each row as tab-separated cells
+            try:
+                grid = element.data.grid
+                for row in grid:
+                    cells = [(getattr(cell, "text", "") or "").strip() for cell in row]
+                    row_text = "\t".join(cells)
+                    if row_text.strip("\t"):
+                        parts.append(row_text)
+                continue          # handled as table — skip text fallback below
+            except AttributeError:
+                pass
+            # Text / heading / paragraph items
+            text = (getattr(element, "text", "") or "").strip()
+            if text:
+                parts.append(text)
+    except Exception:
+        return docling_doc.export_to_markdown().strip()
+    return "\n".join(parts)
 
 
 def _load_pdf_as_text(path: Path) -> list[Document]:
@@ -129,7 +157,7 @@ def _load_pdf_as_text(path: Path) -> list[Document]:
 
     converter = DocumentConverter()
     result = converter.convert(str(path))
-    text = result.document.export_to_markdown().strip()
+    text = _docling_doc_to_text(result.document)
     if not text:
         return []
 

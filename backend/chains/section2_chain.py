@@ -39,13 +39,15 @@ HISTORICAL PROJECTS — REAL DATA FROM PREVIOUS CALCULATIONS
 INSTRUCTIONS
 ════════════════════════════════════════
 1. Study the historical projects above carefully.
-2. Identify which historical steps are most similar to what the new project needs.
-3. Use the EXACT hourly rates (Rate: X€/h) from the historical data for matching work types — do NOT invent rates.
-4. Scale hours up or down based on project complexity compared to historical examples.
-5. Add any steps the new project needs that don't appear in history, using the standard rates below.
-6. For EVERY sub-step, use EXACTLY the standard hourly rate listed below — do NOT use any other rate.
+2. Identify which historical steps and sub-steps are most similar to what the new project needs.
+3. Re-use the structure (phases and sub-steps) from the most relevant historical project as your
+   starting template — do not invent a completely new structure when a good historical match exists.
+4. For hourly rates: use the rate shown in the matching historical sub-step (Rate: X€/h).
+   Only fall back to the standard rates below when a sub-step has NO historical equivalent.
+5. Scale hours up or down based on project size and complexity compared to the historical example.
+6. Add any sub-steps the new project needs that don't appear in history, using the standard rates.
 
-Work categories and STANDARD hourly rates (€/h):
+Standard hourly rates (€/h) — use ONLY when no historical rate is available for a sub-step:
 {categories}
 
 CRITICAL: You MUST use the nested "sub_steps" array. Do NOT place hourly_rate/hours/persons \
@@ -61,7 +63,7 @@ Return ONLY a JSON array — no explanation, no markdown, no totals row:
       {{
         "name": "sub-step description",
         "category": "one of the work categories above",
-        "hourly_rate": <exact number from historical data>,
+        "hourly_rate": <rate from historical data, or standard rate if no match>,
         "hours": <estimated hours per person for this sub-step>,
         "persons": <number of people needed for this sub-step>
       }}
@@ -94,6 +96,9 @@ def _detect_project_category(description: str, k: int = 10) -> list[str]:
     """
     Query ChromaDB without any filter and vote on 'project_category' metadata
     among the top-k most similar chunks.
+
+    The query prioritises expertise and deliverable signals (strongest type
+    indicators) over project name.
 
     Returns:
       - [best_category]          — one clear winner (strictly more votes than second)
@@ -159,11 +164,16 @@ def _retrieve_similar_projects(description: str, k: int = 8, categories: list[st
                 src = doc.metadata.get("source", "unknown")
                 candidates.append((score, content, src))
 
-        if not candidates:
-            return "No historical data available."
+        # Sort by score ascending (smaller cosine distance = more relevant).
+        # Drop phases whose similarity score is too poor (> threshold) so that
+        # unrelated historical data doesn't pollute the estimate.
+        _SCORE_THRESHOLD = 1.2  # cosine distance; tune if needed
+        candidates = [(s, c, src) for s, c, src in candidates if s <= _SCORE_THRESHOLD]
 
-        # Sort by score ascending (smaller cosine distance = more relevant),
-        # then keep the top 12 phases.
+        if not candidates:
+            return "No sufficiently similar historical data found."
+
+        # Keep the top 12 phases.
         candidates.sort(key=lambda x: x[0])
         top = candidates[:12]
 
@@ -193,12 +203,24 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
     lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     llm = get_llm()
 
-    description_query = (
-        f"{project.project_name} {project.goals} {project.required_expertise} "
-        f"{project.material_deliverables}"
-    )
+    # Build the retrieval query: weight expertise and deliverables highest
+    # (strongest project-type signals), then goals and name for context.
+    description_query = " ".join(filter(None, [
+        project.required_expertise,
+        project.material_deliverables,
+        project.project_name,
+        project.goals,
+        project.constraints,
+    ]))
 
-    detected_category = _detect_project_category(description_query)
+    # Category detection uses an even tighter signal: just expertise + deliverables
+    category_query = " ".join(filter(None, [
+        project.required_expertise,
+        project.material_deliverables,
+        project.project_name,
+    ])) or description_query
+
+    detected_category = _detect_project_category(category_query)
     historical_data = _retrieve_similar_projects(description_query, categories=detected_category or None)
 
     # --- Step 1: Generate description paragraph ---
