@@ -3,6 +3,8 @@ Offer generator — orchestrates all section chains to produce the complete offe
 Runs sections sequentially and yields progress events.
 """
 from __future__ import annotations
+import json
+import time
 from pathlib import Path
 from typing import Iterator
 
@@ -35,6 +37,15 @@ def _load_salesperson(salesperson_name: str) -> dict | None:
     return None
 
 
+def _estimate_tokens(value) -> int:
+    """Rough token count from output size: ~4 chars per token."""
+    if isinstance(value, str):
+        text = value
+    else:
+        text = json.dumps(value, ensure_ascii=False, default=str)
+    return max(1, len(text) // 4)
+
+
 def generate_offer(
     project: ProjectData,
     enable_web_search: bool = True,
@@ -52,39 +63,62 @@ def generate_offer(
     def _step(name: str):
         yield {"status": "progress", "section": name, "message": f"Generating {name}…"}
 
+    _total_start = time.time()
+
     try:
         yield {"status": "progress", "section": "thank_you", "message": "Generating thank-you paragraph…"}
+        _t0 = time.time()
         sections["thankyou"] = generate_thankyou(project, language=language)
+        yield {"status": "stats", "section": "thank_you", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["thankyou"])}
 
         yield {"status": "progress", "section": "section1", "message": "Generating Section 1: Background and Goals…"}
+        _t0 = time.time()
         sections["section1"] = generate_section1(project, enable_web_search=enable_web_search, language=language)
+        yield {"status": "stats", "section": "section1", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section1"])}
 
         yield {"status": "progress", "section": "section2", "message": "Generating Section 2: Cost Estimation…"}
+        _t0 = time.time()
         sections["section2"] = generate_section2(project, language=language)
+        yield {"status": "stats", "section": "section2", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section2"])}
 
         yield {"status": "progress", "section": "section3", "message": "Generating Section 3: Timetable…"}
+        _t0 = time.time()
         sections["section3"] = generate_timetable(project, language=language)
+        yield {"status": "stats", "section": "section3", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section3"])}
 
         yield {"status": "progress", "section": "section4", "message": "Generating Section 4: Restrictions…"}
+        _t0 = time.time()
         sections["section4"] = generate_restrictions(project, language=language)
+        yield {"status": "stats", "section": "section4", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section4"])}
 
         yield {"status": "progress", "section": "section5", "message": "Generating Section 5: Material Transformation…"}
+        _t0 = time.time()
         sections["section5"] = generate_material(project, language=language)
+        yield {"status": "stats", "section": "section5", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section5"])}
 
         yield {"status": "progress", "section": "section6", "message": "Loading Section 6: Documentation (boilerplate)…"}
+        _t0 = time.time()
         sections["section6"] = read_boilerplate("documentation", language=language)
+        yield {"status": "stats", "section": "section6", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section6"])}
 
         yield {"status": "progress", "section": "section7", "message": "Loading Section 7: Quality Assurance (SKOL)…"}
+        _t0 = time.time()
         sections["section7"] = read_boilerplate("quality", language=language)
+        yield {"status": "stats", "section": "section7", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section7"])}
 
         yield {"status": "progress", "section": "section8", "message": "Generating Section 8: Project Team (CV matching)…"}
+        _t0 = time.time()
         sections["section8"] = generate_section8(project, language=language)
+        yield {"status": "stats", "section": "section8", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section8"])}
 
         yield {"status": "progress", "section": "section9", "message": "Loading Section 9: Delivery Terms (boilerplate)…"}
+        _t0 = time.time()
         sections["section9"] = read_boilerplate("delivery", language=language)
         sections["section9_payment"] = read_boilerplate_dated("payment", project.document_date, language=language)
+        yield {"status": "stats", "section": "section9", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section9"])}
 
         yield {"status": "progress", "section": "section10", "message": "Generating Section 10: Contact Information…"}
+        _t0 = time.time()
         salesperson_contact = _load_salesperson(project.salesperson_name)
         # Populate salesperson fields into ProjectData so all chains can access them
         if salesperson_contact:
@@ -92,9 +126,12 @@ def generate_offer(
             project.salesperson_email = salesperson_contact.get("email", "")
             project.salesperson_title = salesperson_contact.get("title", "")
         sections["section10_text"] = generate_contact_text(project, language=language, salesperson_contact=salesperson_contact)
+        yield {"status": "stats", "section": "section10", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section10_text"])}
 
         yield {"status": "progress", "section": "docx", "message": "Assembling DOCX document…"}
+        _t0 = time.time()
         docx_path = build_offer_document(project, sections, salesperson_contact, language=language)
+        yield {"status": "stats", "section": "docx", "elapsed_s": round(time.time() - _t0, 1), "tokens": 0}
 
         xlsx_path = None
         if generate_cost_table:
@@ -106,8 +143,10 @@ def generate_offer(
         pdf_path = None
         if export_pdf:
             yield {"status": "progress", "section": "pdf", "message": "Converting to PDF…"}
+            _t0 = time.time()
             try:
                 pdf_path = convert_to_pdf(docx_path)
+                yield {"status": "stats", "section": "pdf", "elapsed_s": round(time.time() - _t0, 1), "tokens": 0}
             except Exception as e:
                 yield {"status": "warning", "section": "pdf", "message": f"PDF conversion failed: {e}"}
 
@@ -118,6 +157,7 @@ def generate_offer(
             "docx": str(docx_path),
             "pdf": str(pdf_path) if pdf_path else None,
             "xlsx": str(xlsx_path) if xlsx_path else None,
+            "elapsed_total_s": round(time.time() - _total_start, 1),
         }
 
     except Exception as e:

@@ -14,9 +14,11 @@ interface ProjectData {
 }
 
 interface ProgressEvent {
-  status: 'progress' | 'done' | 'error' | 'warning'
+  status: 'progress' | 'done' | 'error' | 'warning' | 'stats'
   section: string; message: string
   docx?: string; pdf?: string
+  elapsed_s?: number; tokens?: number
+  elapsed_total_s?: number
 }
 
 const SECTIONS_ORDER = [
@@ -67,6 +69,8 @@ export default function NewOfferTab({ lang }: Props) {
   const [extracting, setExtracting] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [events, setEvents] = useState<ProgressEvent[]>([])
+  const [sectionStats, setSectionStats] = useState<Record<string, { elapsed_s: number; tokens: number }>>({})
+  const [totalElapsed, setTotalElapsed] = useState<number | null>(null)
   const [result, setResult] = useState<{ docx?: string; pdf?: string; xlsx?: string } | null>(null)
   const [webSearch, setWebSearch] = useState(true)
   const [exportPdf, setExportPdf] = useState(true)
@@ -160,6 +164,8 @@ export default function NewOfferTab({ lang }: Props) {
     abortControllerRef.current = controller
     setGenerating(true)
     setEvents([])
+    setSectionStats({})
+    setTotalElapsed(null)
     setResult(null)
     setStep('generating')
 
@@ -185,10 +191,15 @@ export default function NewOfferTab({ lang }: Props) {
           if (!line.trim()) continue
           try {
             const ev: ProgressEvent = JSON.parse(line)
-            setEvents(prev => [...prev, ev])
-            if (ev.status === 'done' && ev.docx) {
-              setResult({ docx: ev.docx, pdf: ev.pdf || undefined, xlsx: (ev as any).xlsx || undefined })
-              setStep('done')
+            if (ev.status === 'stats') {
+              setSectionStats(prev => ({ ...prev, [ev.section]: { elapsed_s: ev.elapsed_s ?? 0, tokens: ev.tokens ?? 0 } }))
+            } else {
+              setEvents(prev => [...prev, ev])
+              if (ev.status === 'done' && ev.docx) {
+                if (ev.elapsed_total_s != null) setTotalElapsed(ev.elapsed_total_s)
+                setResult({ docx: ev.docx, pdf: ev.pdf || undefined, xlsx: (ev as any).xlsx || undefined })
+                setStep('done')
+              }
             }
           } catch { /* ignore */ }
         }
@@ -204,6 +215,8 @@ export default function NewOfferTab({ lang }: Props) {
     abortControllerRef.current = null
     setGenerating(false)
     setEvents([])
+    setSectionStats({})
+    setTotalElapsed(null)
     setResult(null)
     setStep('form')
   }
@@ -536,7 +549,14 @@ export default function NewOfferTab({ lang }: Props) {
       {(step === 'generating' || step === 'done') && (
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h2 style={{ margin: 0 }}>{step === 'done' ? t('offer_generated', lang) : t('generating', lang)}</h2>
+            <h2 style={{ margin: 0 }}>
+              {step === 'done' ? t('offer_generated', lang) : t('generating', lang)}
+              {step === 'done' && totalElapsed != null && (
+                <span style={{ fontSize: 13, fontWeight: 400, color: '#6b7280', marginLeft: 10 }}>
+                  ⏱ {totalElapsed}s total
+                </span>
+              )}
+            </h2>
             {step === 'generating' && (
               <button
                 className="btn btn-secondary"
@@ -556,11 +576,24 @@ export default function NewOfferTab({ lang }: Props) {
                 ? ev.status === 'done' || ev.status === 'progress' ? (step === 'done' ? 'done' : isActive ? 'active' : 'done')
                 : ev.status === 'error' ? 'error' : 'warning'
                 : 'pending'
+              const stats = sectionStats[sectionKey]
               return (
                 <li key={sectionKey} className="progress-item">
                   <span className={`progress-dot ${dotClass}`} />
                   <span>{SECTION_LABELS[sectionKey] || sectionKey}</span>
-                    {ev && ev.status === 'warning' && <span style={{ fontSize: 12, color: '#c27803', marginLeft: 8 }}>⚠️ {ev.message}</span>}
+                  {stats && (
+                    <span style={{ display: 'inline-flex', gap: 6, marginLeft: 10 }}>
+                      <span style={{ fontSize: 11, color: '#6b7280', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 4, padding: '1px 6px' }}>
+                        ⏱ {stats.elapsed_s}s
+                      </span>
+                      {stats.tokens > 0 && (
+                        <span style={{ fontSize: 11, color: '#6b7280', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 4, padding: '1px 6px' }}>
+                          ~{stats.tokens} tok
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {ev && ev.status === 'warning' && <span style={{ fontSize: 12, color: '#c27803', marginLeft: 8 }}>⚠️ {ev.message}</span>}
                   {ev && ev.status === 'error' && <span style={{ fontSize: 12, color: '#dc2626', marginLeft: 8 }}>✕ {ev.message}</span>}
                 </li>
               )
