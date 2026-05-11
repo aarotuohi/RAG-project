@@ -292,6 +292,18 @@ def build_cost_excel(project: ProjectData, section2: dict,
                   bold=True, fill=_SUMMARY_FILL,
                   number_format='#,##0.00', align="right")
 
+    
+    # These settings ensure "Save As PDF" in Excel produces the same layout.
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToPage = True
+    ws.page_setup.fitToWidth = 1   
+    ws.page_setup.fitToHeight = 0 
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_options.horizontalCentered = True
+    ws.print_area = f"A1:E{current_row}"
+    ws.print_title_rows = "1:7"   
+
     # ── Save ──────────────────────────────────────────────────────────────────
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     stem = (project.project_name or "offer").replace(" ", "_")[:40]

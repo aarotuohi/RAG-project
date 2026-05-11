@@ -92,7 +92,7 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
-def _detect_project_category(description: str, k: int = 10) -> list[str]:
+def _detect_project_category(description: str, k: int = 20) -> list[str]:
     """
     Query ChromaDB without any filter and vote on 'project_category' metadata
     among the top-k most similar chunks.
