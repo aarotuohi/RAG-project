@@ -36,6 +36,16 @@ HISTORICAL PROJECTS — REAL DATA FROM PREVIOUS CALCULATIONS
 {historical_data}
 
 ════════════════════════════════════════
+HOW TO READ THE HISTORICAL DATA ABOVE
+════════════════════════════════════════
+Each historical block is structured as one work phase (= one STEP in your output):
+  "Phase: <phase name>"        → map this to one step object  (step_id: "STEP N", name: "...")
+  "Sub-step N.M: <task name>"  → map each of these to one entry inside that step's "sub_steps" array
+
+Every indented line under a Phase header is a separate sub-step with its own Rate, Hours and Total.
+Do NOT flatten all sub-steps into a single step — preserve the phase → sub-step hierarchy.
+
+════════════════════════════════════════
 INSTRUCTIONS
 ════════════════════════════════════════
 1. Study the historical projects above carefully.

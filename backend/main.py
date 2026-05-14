@@ -32,6 +32,9 @@ async def lifespan(app: FastAPI):
     else:
         os.environ["OLLAMA_LLM_MODEL"] = cfg.OLLAMA_LLM_MODEL
     print(f"[AISALES] Using model: {cfg.OLLAMA_LLM_MODEL}")
+    # -- Claude alternative: replace the four lines above with:
+    # print(f"[AISALES] LLM: Anthropic {cfg.ANTHROPIC_MODEL}")
+    # print(f"[AISALES] Embeddings: Ollama {cfg.OLLAMA_EMBED_MODEL}")
 
     yield  # app is running
 

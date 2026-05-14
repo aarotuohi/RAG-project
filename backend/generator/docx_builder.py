@@ -111,27 +111,43 @@ def _fmt_eur(value: float) -> str:
     return f"{int(round(value)):,}€".replace(",", "\u00a0")
 
 
-def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: float, project_output: str = ""):
+def _add_cost_table(
+    doc: Document,
+    steps: list[CostStepGroup],
+    grand_total: float,
+    project_output: str = "",
+    language: str = "en",
+):
     """Add the cost estimation table without borders, matching the offer layout."""
+    is_fi = language == "fi"
+    step_label      = "Vaihe"     if is_fi else "Step"
+    grand_total_lbl = "Yhteens\u00e4" if is_fi else "Grand Total"
+    output_lbl      = "Tuotos"    if is_fi else "Output"
+    col_headers = (
+        ["Vaihe", "Tuntihinta [\u20ac/h]", "Tuntiarvio [h]", "Hinta-arvio [\u20ac]"]
+        if is_fi else
+        ["Step", "Hourly cost [\u20ac/h]", "Hours estimation [h]", "Cost estimation [\u20ac]"]
+    )
+
     table = doc.add_table(rows=1, cols=4)
     table.style = "Table Grid"
     _clear_table_borders(table)
 
     # Header row
-    headers = ["Step", "Hourly cost [\u20ac/h]", "Hours estimation [h]", "Cost estimation [\u20ac]"]
     hdr_cells = table.rows[0].cells
-    for i, hdr in enumerate(headers):
+    for i, hdr in enumerate(col_headers):
         _set_cell_text(hdr_cells[i], hdr, bold=True, align_right=(i > 0))
 
     for grp_idx, step_group in enumerate(steps, 1):
-        try:
-            step_num = step_group.step_id.split()[-1]
-        except Exception:
-            step_num = str(grp_idx)
+        # Extract numeric part from step_id regardless of LLM format
+        # (handles "STEP 1", "VAIHE 1", "Vaihe 1", "1", etc.)
+        import re as _re
+        _m = _re.search(r'\d+', step_group.step_id)
+        step_num = _m.group() if _m else str(grp_idx)
 
         # Step-group header row — bold, shows totals
         main_row = table.add_row().cells
-        _set_cell_text(main_row[0], f"{step_group.step_id}: {step_group.name}", bold=True)
+        _set_cell_text(main_row[0], f"{step_label} {step_num}: {step_group.name}", bold=True)
         _set_cell_text(main_row[1], "", bold=True, align_right=True)
         _set_cell_text(main_row[2], f"{step_group.total_hours:,.1f}", bold=True, align_right=True)
         _set_cell_text(main_row[3], _fmt_eur(step_group.total_cost), bold=True, align_right=True)
@@ -147,9 +163,9 @@ def _add_cost_table(doc: Document, steps: list[CostStepGroup], grand_total: floa
     # Grand total row
     total_hours = sum(sg.total_hours for sg in steps)
     total_row = table.add_row().cells
-    _set_cell_text(total_row[0], "Grand Total:", bold=True)
+    _set_cell_text(total_row[0], f"{grand_total_lbl}:", bold=True)
     if project_output:
-        total_row[0].add_paragraph(f"Output: {project_output}")
+        total_row[0].add_paragraph(f"{output_lbl}: {project_output}")
     _set_cell_text(total_row[1], "", bold=True, align_right=True)
     _set_cell_text(total_row[2], f"{total_hours:,.1f} h", bold=True, align_right=True)
     _set_cell_text(total_row[3], _fmt_eur(grand_total), bold=True, align_right=True)
@@ -335,7 +351,7 @@ def build_offer_document(
     doc.add_paragraph()
     steps = s2.get("steps", [])
     if steps:
-        _add_cost_table(doc, steps, s2.get("grand_total", 0.0), s2.get("project_output", ""))
+        _add_cost_table(doc, steps, s2.get("grand_total", 0.0), s2.get("project_output", ""), language)
     doc.add_paragraph()
 
     # ── Section 3 ─────────────────────────────────────────────────────────────

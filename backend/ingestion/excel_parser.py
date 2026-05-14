@@ -32,9 +32,16 @@ _META_LABEL_MAP = {
 _COL_HEADER_MAP = {
     "hlö":               "persons",
     "h/hlö":             "hours_per_person",
+    "h/hlo":             "hours_per_person",   # ASCII fallback (ö→o)
     "tuntihinta [€/h]":  "rate",
+    "tuntihinta":        "rate",               # without unit suffix
+    "yksikköhinta":      "rate",               # alternative Finnish term
+    "hinta [€/h]":       "rate",               # alternative notation
     "tuntiarvio [h]":    "total_hours",
+    "tuntiarvio":        "total_hours",         # without unit suffix
     "hinta-arvio [€]":   "price",
+    "hinta-arvio":       "price",              # without unit suffix
+    "arvioitu hinta":    "price",
     # Description / notes columns (Finnish + English variants)
     "kuvaus":            "description",
     "selite":            "description",
@@ -47,7 +54,9 @@ _COL_HEADER_MAP = {
 
 # Rows whose first cell matches these patterns are not data rows
 _SKIP_PATTERNS = re.compile(
-    r"^(arvioidut|yhteensä|total|grand|vaihe\s*\d+|phase)",
+    r"^(arvioidut|yhteensä|total|grand|vaihe\s*\d+|phase"
+    r"|kustannukset|kokonaishinta|kiinteä\s*hinta|fixed\s*price"
+    r"|subtotal|summary|arvioitu\s*kustannus|työkustannus)",
     re.IGNORECASE,
 )
 

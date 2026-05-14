@@ -256,12 +256,14 @@ def _load_excel_as_text(path: Path) -> list[Document]:
                 phases = steps_by_phase(all_steps)
 
                 for phase_idx, (phase_name, phase_steps) in enumerate(phases.items()):
-                    # Each line: step name + optional description + numbers
+                    # Each line: sub-step number + name + numbers
                     step_lines = []
                     for s in phase_steps:
+                        # Extract the numeric sub-step label (e.g. "1.1" from "Vaihe 1 / 1.1")
+                        sub_num = s.step_id.split(" / ")[-1].strip() if " / " in s.step_id else s.step_id
                         desc_part = f" | Notes: {s.description}" if s.description else ""
                         step_lines.append(
-                            f"  {s.name}{desc_part}"
+                            f"  Sub-step {sub_num}: {s.name}{desc_part}"
                             f" | Category: {s.category}"
                             f" | Rate: {s.hourly_rate}€/h"
                             f" | Hours: {s.hours}h"

@@ -34,6 +34,10 @@ OLLAMA_LLM_MODEL   = os.environ.get("OLLAMA_LLM_MODEL",  "qwen2.5:14b-instruct-q
 OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 OLLAMA_NUM_CTX     = int(os.environ.get("OLLAMA_NUM_CTX", 4096))  # context window tokens sent to Ollama
 
+# -- Claude alternative: uncomment these two lines and comment out OLLAMA_LLM_MODEL above
+# ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# ANTHROPIC_MODEL   = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+
 # ChromaDB settings 
 CHROMA_COLLECTION_COST     = "cost_history"
 CHROMA_COLLECTION_CV       = "cv_database"

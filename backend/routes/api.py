@@ -14,6 +14,8 @@ from backend.chains.extraction_chain import extract_from_file, ProjectData, proj
 from backend.generator.offer_generator import generate_offer
 from backend.vectorstore.chroma_client import collection_count
 from backend.ollama_client import recommend_model, list_local_models, is_ollama_running
+# -- Claude alternative: replace the import above with:
+# from backend.ollama_client import is_ollama_running
 from backend.ingestion.ingestion_queue import submit_job, get_job, list_jobs, queue_size
 import backend.config as _cfg
 from backend.config import (
@@ -86,6 +88,19 @@ def get_status():
             "contacts":     collection_count(CHROMA_COLLECTION_CONTACTS),
         },
     }
+    # -- Claude alternative: replace the return dict above with:
+    # return {
+    #     "llm_provider": "anthropic",
+    #     "active_model": _cfg.ANTHROPIC_MODEL,
+    #     "embed_model": _cfg.OLLAMA_EMBED_MODEL,
+    #     "ollama_running": is_ollama_running(),
+    #     "collection_counts": {
+    #         "cost_history": collection_count(CHROMA_COLLECTION_COST),
+    #         "cv_database":  collection_count(CHROMA_COLLECTION_CV),
+    #         "boilerplate":  collection_count(CHROMA_COLLECTION_BOILER),
+    #         "contacts":     collection_count(CHROMA_COLLECTION_CONTACTS),
+    #     },
+    # }
 
 
 # ── Transcript Extraction ─────────────────────────────────────────────────────

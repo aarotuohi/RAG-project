@@ -7,8 +7,13 @@ import time
 import requests
 import platform
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
+# -- Claude alternative: uncomment these two imports, comment out the OllamaLLM import above
+# from langchain_anthropic import ChatAnthropic
+# from langchain_core.output_parsers import StrOutputParser
 
 from backend.config import OLLAMA_BASE_URL, OLLAMA_LLM_MODEL, OLLAMA_EMBED_MODEL, OLLAMA_NUM_CTX
+# -- Claude alternative: replace the import above with:
+# from backend.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 
 
 def _get_available_ram_gb() -> float:
@@ -24,7 +29,7 @@ def recommend_model() -> str:
     """Return the configured LLM model."""
     return "qwen2.5:14b-instruct-q4_K_M"
 
- 
+
 def is_ollama_running() -> bool:
     try:
         r = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3)
@@ -82,6 +87,16 @@ def get_llm(model: str | None = None, num_ctx: int | None = None) -> OllamaLLM:
     if _llm is None or _llm.model != resolved or _llm.num_ctx != ctx:
         _llm = OllamaLLM(model=resolved, base_url=OLLAMA_BASE_URL, temperature=0.2, num_ctx=ctx)
     return _llm
+# -- Claude alternative: replace the get_llm function above with:
+# def get_llm(**kwargs):
+#     global _llm
+#     if _llm is None:
+#         _llm = ChatAnthropic(
+#             model=ANTHROPIC_MODEL,
+#             api_key=ANTHROPIC_API_KEY,
+#             temperature=0.2,
+#         ) | StrOutputParser()
+#     return _llm
 
 
 def get_embeddings() -> OllamaEmbeddings:
