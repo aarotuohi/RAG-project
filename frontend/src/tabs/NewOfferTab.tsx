@@ -453,7 +453,18 @@ export default function NewOfferTab({ lang }: Props) {
                       <div style={{ whiteSpace: 'pre-wrap', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, padding: 10 }}>{testResult.result?.description_text || '—'}</div>
                     </div>
                     <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('test_steps', lang)}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ fontWeight: 600 }}>{t('test_steps', lang)}</span>
+                        {testResult.result?.xlsx && (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: 12, padding: '3px 10px' }}
+                            onClick={() => download(testResult.result.xlsx)}
+                          >
+                            {t('download_xlsx', lang)}
+                          </button>
+                        )}
+                      </div>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                         <thead>
                           <tr style={{ background: '#f1f5f9' }}>

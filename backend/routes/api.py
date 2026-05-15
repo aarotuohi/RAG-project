@@ -231,8 +231,15 @@ def test_generate(req: TestGenerateRequest):
     elif req.section == "section2":
         try:
             from dataclasses import asdict
+            from backend.generator.excel_builder import build_cost_excel
             raw = generate_section2(project, language=req.document_language)
             steps = raw.get("steps", [])
+            xlsx_path: str | None = None
+            try:
+                xlsx_file = build_cost_excel(project, raw, language=req.document_language)
+                xlsx_path = str(xlsx_file)
+            except Exception:
+                pass  
             return {
                 "section": "section2",
                 "result": {
@@ -240,6 +247,7 @@ def test_generate(req: TestGenerateRequest):
                     "grand_total": raw.get("grand_total", 0),
                     "payment_type": raw.get("payment_type", ""),
                     "steps": [asdict(s) if hasattr(s, "__dataclass_fields__") else s for s in steps],
+                    "xlsx": xlsx_path,
                 },
             }
         except Exception as e:

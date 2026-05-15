@@ -95,6 +95,115 @@ Material deliverables: {material_deliverables}
 Implementation paragraph:"""
 )
 
+_ESTIMATION_PROMPT_FI = PromptTemplate.from_template(
+    """Olet projektin kustannusarviointiasiantuntija. Tehtäväsi on tuottaa tarkka \
+vaiheistettu kustannusarvio uudelle projektille oppimalla aidosta historiallisesta projektidatasta.
+
+════════════════════════════════════════
+UUSI PROJEKTI
+════════════════════════════════════════
+Nimi: {project_name}
+Tavoitteet: {goals}
+Rajoitteet: {description}
+Vaadittu osaaminen: {required_expertise}
+Maksutapa: {payment_type}
+
+════════════════════════════════════════
+HISTORIALLISET PROJEKTIT — AITO DATA AIEMMISTA LASKELMISTA
+════════════════════════════════════════
+{historical_data}
+
+════════════════════════════════════════
+KUINKA LUKEA HISTORIALLISTA DATAA
+════════════════════════════════════════
+Jokainen historiallinen lohko edustaa yhtä työvaihetta (= yksi VAIHE tulosteen JSON:ssa):
+  "Phase: <vaiheen nimi>"          → muodosta yksi step-objekti  (step_id: "STEP N", name: "...")
+  "Sub-step N.M: <tehtävän nimi>"  → muodosta yksi merkintä kyseisen vaiheen "sub_steps"-taulukkoon
+
+Jokainen sisennetty rivi Phase-otsikon alla on erillinen alivaihe omalla Rate-, Hours- ja Total-arvollaan.
+ÄLÄ litistä kaikkia alivaiheita yhdeksi vaiheeksi — säilytä vaihe → alivaihe -hierarkia.
+
+════════════════════════════════════════
+OHJEET
+════════════════════════════════════════
+1. Tutki historiallisia projekteja huolellisesti.
+2. Tunnista, mitkä historialliset vaiheet ja alivaiheet vastaavat parhaiten uuden projektin tarpeita.
+3. Käytä relevanteimman historiallisen projektin rakennetta (vaiheet ja alivaiheet) lähtökohtana —
+   älä keksi täysin uutta rakennetta, jos sopiva historiallinen malli on olemassa.
+4. Tuntihintoja varten: käytä vastaavan historiallisen alivaiheen hintaa (Rate: X€/h).
+   Käytä alla olevia vakiohintoja vain, jos alivaiheelle ei löydy historiallista vastaavuutta.
+5. Skaalaa tunteja ylös tai alas projektin koon ja monimutkaisuuden perusteella verrattuna historialliseen esimerkkiin.
+6. Lisää alivaiheita, joita uusi projekti tarvitsee mutta joita ei esiinny historiassa — käytä vakiohintoja.
+
+Vakiotuntihinnat (€/h) — käytä VAIN, jos alivaiheelle ei ole historiallista hintaa:
+{categories}
+
+KRIITTISTÄ: Sinun TÄYTYY käyttää sisäkkäistä "sub_steps"-taulukkoa. ÄLÄ aseta hourly_rate/hours/persons \
+suoraan step-objektiin — ainoastaan sub_steps-kohteiden sisälle.
+
+Palauta VAIN JSON-taulukko — ei selityksiä, ei markdownia, ei yhteensä-riviä:
+[
+  {{
+    "step_id": "STEP 1",
+    "name": "päävaiheen nimi suomeksi",
+    "output": "lyhyt kuvaus vaiheen tuotoksesta",
+    "sub_steps": [
+      {{
+        "name": "alivaiheen kuvaus",
+        "category": "yksi yllä olevista työkategorioista",
+        "hourly_rate": <hinta historiallisesta datasta, tai vakiohinta jos ei vastaavuutta>,
+        "hours": <arvioitu tuntimäärä per henkilö tässä alivaiheessa>,
+        "persons": <tarvittava henkilömäärä tässä alivaiheessa>
+      }}
+    ]
+  }},
+  ...
+]"""
+)
+
+_DESCRIPTION_PROMPT_FI = PromptTemplate.from_template(
+    """Kirjoita ammattimainen 2-3 lauseen kappale myyntitarjousasiakirjaan, joka kuvaa
+projektin toteutustapaa. Mainitse, onko kyseessä tuntiperusteinen vai kiinteähintainen projekti.
+
+Projektin nimi: {project_name}
+Tavoitteet: {goals}
+Maksutapa: {payment_type}
+Materiaalitoimitukset: {material_deliverables}
+
+Toteutuskappale:"""
+)
+
+
+def _historical_rates(historical_data: str) -> dict[str, float]:
+  
+    totals: dict[str, list[float]] = {}
+    for line in historical_data.splitlines():
+        cat_m  = re.search(r"Category:\s*([^|]+)", line)
+        rate_m = re.search(r"Rate:\s*([\d.,]+)\s*€/h", line)
+        if not cat_m or not rate_m:
+            continue
+        cat  = cat_m.group(1).strip()
+        try:
+            rate = float(rate_m.group(1).replace(",", "."))
+        except ValueError:
+            continue
+        if rate > 0:
+            totals.setdefault(cat, []).append(rate)
+
+    result: dict[str, float] = dict(CATEGORY_RATES)  
+    for cat, rates in totals.items():
+        avg = round(sum(rates) / len(rates))
+       
+        matched = next(
+            (k for k in result if k.lower() == cat.lower()),
+            None,
+        )
+        if matched:
+            result[matched] = avg
+        else:
+            result[cat] = avg   
+    return result
+
 
 def _clean_json(text: str) -> str:
     text = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.IGNORECASE)
@@ -103,18 +212,7 @@ def _clean_json(text: str) -> str:
 
 
 def _detect_project_category(description: str, k: int = 20) -> list[str]:
-    """
-    Query ChromaDB without any filter and vote on 'project_category' metadata
-    among the top-k most similar chunks.
-
-    The query prioritises expertise and deliverable signals (strongest type
-    indicators) over project name.
-
-    Returns:
-      - [best_category]          — one clear winner (strictly more votes than second)
-      - [first, second]          — tie at the top; use both as fallback
-      - []                       — no categories in collection (flat layout)
-    """
+   
     try:
         collection = get_collection(CHROMA_COLLECTION_COST)
         results = collection.similarity_search_with_score(description, k=k)
@@ -136,14 +234,7 @@ def _detect_project_category(description: str, k: int = 20) -> list[str]:
 
 
 def _retrieve_similar_projects(description: str, k: int = 8, categories: list[str] | None = None) -> str:
-    """
-    Retrieve the most relevant historical cost phases from ChromaDB.
-
-    *categories* controls which sub-folders are searched:
-      - 1 category  → exact metadata filter on 'project_category'
-      - 2 categories → '$in' filter covering both sub-folders (fallback)
-      - None / []   → no filter; searches the entire collection
-    """
+   
     try:
         collection = get_collection(CHROMA_COLLECTION_COST)
 
@@ -174,10 +265,8 @@ def _retrieve_similar_projects(description: str, k: int = 8, categories: list[st
                 src = doc.metadata.get("source", "unknown")
                 candidates.append((score, content, src))
 
-        # Sort by score ascending (smaller cosine distance = more relevant).
-        # Drop phases whose similarity score is too poor (> threshold) so that
-        # unrelated historical data doesn't pollute the estimate.
-        _SCORE_THRESHOLD = 1.2  # cosine distance; tune if needed
+      
+        _SCORE_THRESHOLD = 1.2  
         candidates = [(s, c, src) for s, c, src in candidates if s <= _SCORE_THRESHOLD]
 
         if not candidates:
@@ -233,29 +322,47 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
     detected_category = _detect_project_category(category_query)
     historical_data = _retrieve_similar_projects(description_query, categories=detected_category or None)
 
+    is_fi = language == "fi"
+    desc_template = _DESCRIPTION_PROMPT_FI if is_fi else _DESCRIPTION_PROMPT
+    est_template  = _ESTIMATION_PROMPT_FI  if is_fi else _ESTIMATION_PROMPT
+
     # --- Step 1: Generate description paragraph ---
-    desc_prompt = _DESCRIPTION_PROMPT.format(
-        project_name=project.project_name or "New Project",
-        goals=project.goals or "Not specified",
+    desc_kwargs = dict(
+        project_name=project.project_name or ("Uusi projekti" if is_fi else "New Project"),
+        goals=project.goals or ("Ei määritelty" if is_fi else "Not specified"),
         payment_type=project.payment_type or "hourly",
-        material_deliverables=project.material_deliverables or "Not specified",
-    ) + f"\n\n{lang_note}"
+        material_deliverables=project.material_deliverables or ("Ei määritelty" if is_fi else "Not specified"),
+    )
+    desc_prompt = desc_template.format(**desc_kwargs)
+    if not is_fi:
+        desc_prompt += f"\n\n{lang_note}"
     description_text = llm.invoke(desc_prompt).strip()
 
+    # Compute data-driven fallback rates from the retrieved historical chunks.
+    # These replace the hardcoded CATEGORY_RATES in the prompt so that even
+    # sub-steps with no direct historical match get a rate derived from real data.
+    fallback_rates = _historical_rates(historical_data)
+
     # --- Step 2: Generate structured cost estimate ---
-    est_prompt = _ESTIMATION_PROMPT.format(
-        project_name=project.project_name or "New Project",
+    est_kwargs = dict(
+        project_name=project.project_name or ("Uusi projekti" if is_fi else "New Project"),
         description=f"{project.goals} {project.constraints}",
-        goals=project.goals or "Not specified",
-        required_expertise=project.required_expertise or "Not specified",
+        goals=project.goals or ("Ei määritelty" if is_fi else "Not specified"),
+        required_expertise=project.required_expertise or ("Ei määritelty" if is_fi else "Not specified"),
         payment_type=project.payment_type or "hourly",
         historical_data=historical_data[:8000],
         categories="\n".join(
-            f"  - {cat}: {CATEGORY_RATES[cat]}\u20ac/h"
+            f"  - {cat}: {fallback_rates.get(cat, CATEGORY_RATES.get(cat, 90))}€/h"
             for cat in WORK_CATEGORIES
         ),
-        output_language="Finnish" if language == "fi" else "English",
-    ) + f"\n\nIMPORTANT: All text fields in the JSON (name, output, sub-step name) MUST be written in {'Finnish' if language == 'fi' else 'English'}, regardless of the language of the historical data."
+    )
+    if not is_fi:
+        est_kwargs["output_language"] = "English"
+    est_prompt = est_template.format(**est_kwargs)
+    if not is_fi:
+        est_prompt += "\n\nIMPORTANT: All text fields in the JSON (name, output, sub-step name) MUST be written in English, regardless of the language of the historical data."
+    else:
+        est_prompt += "\n\nTÄRKEÄÄ: Kaikki JSON:n tekstikentät (name, output, alivaiheen name) TÄYTYY kirjoittaa suomeksi, riippumatta historiallisen datan kielestä."
     raw = llm.invoke(est_prompt)
     cleaned = _clean_json(raw)
 
