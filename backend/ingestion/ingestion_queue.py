@@ -20,6 +20,7 @@ Usage
 """
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 import uuid
@@ -30,6 +31,8 @@ from datetime import datetime
 from typing import Optional
 
 from backend.ingestion.document_loader import index_file
+
+logger = logging.getLogger(__name__)
 
 
 class JobStatus(str, Enum):
@@ -72,7 +75,7 @@ def submit_job(file_path: Path, collection_name: str) -> str:
     with _jobs_lock:
         _jobs[job.job_id] = job
     _job_queue.put(job)
-    print(f"[IngestQueue] Queued {file_path.name} → {collection_name}  ({job.job_id})")
+    logger.info("Queued %s → %s  (%s)", file_path.name, collection_name, job.job_id)
     return job.job_id
 
 
@@ -103,7 +106,7 @@ def start_worker() -> None:
         t = threading.Thread(target=_worker_loop, daemon=True, name="ingestion-worker")
         t.start()
         _worker_started = True
-        print("[IngestQueue] Background worker started.")
+        logger.info("Background worker started.")
 
 
 # ── Worker loop ───────────────────────────────────────────────────────────────
@@ -112,7 +115,7 @@ def _worker_loop() -> None:
     while True:
         job: IngestionJob = _job_queue.get()   # blocks until a job arrives
         try:
-            print(f"[IngestQueue] Processing {job.file_path.name} …")
+            logger.info("Processing %s …", job.file_path.name)
             with _jobs_lock:
                 job.status = JobStatus.PROCESSING
 
@@ -123,14 +126,14 @@ def _worker_loop() -> None:
                 job.status = JobStatus.DONE
                 job.finished_at = datetime.utcnow().isoformat()
 
-            print(f"[IngestQueue] Done  {job.file_path.name}  ({chunks} chunks)")
+            logger.info("Done  %s  (%d chunks)", job.file_path.name, chunks)
 
         except Exception as exc:
             with _jobs_lock:
                 job.status = JobStatus.FAILED
                 job.error  = str(exc)
                 job.finished_at = datetime.utcnow().isoformat()
-            print(f"[IngestQueue] FAILED {job.file_path.name}: {exc}")
+            logger.error("FAILED %s: %s", job.file_path.name, exc, exc_info=True)
 
         finally:
             _job_queue.task_done()

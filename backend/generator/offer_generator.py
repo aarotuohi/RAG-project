@@ -3,10 +3,12 @@ Offer generator — orchestrates all section chains to produce the complete offe
 Runs sections sequentially and yields progress events.
 """
 from __future__ import annotations
+import asyncio
 import json
+import logging
 import time
 from pathlib import Path
-from typing import Iterator
+from typing import AsyncIterator
 
 from backend.chains.extraction_chain import ProjectData
 from backend.chains.section1_chain import generate_section1
@@ -21,6 +23,8 @@ from backend.generator.pdf_converter import convert_to_pdf
 from backend.generator.excel_builder import build_cost_excel
 from backend.ingestion.contact_parser import parse_contact_file, lookup
 from backend.config import CONTACTS_DIR
+
+logger = logging.getLogger(__name__)
 
 
 def _load_salesperson(salesperson_name: str) -> dict | None:
@@ -46,19 +50,22 @@ def _estimate_tokens(value) -> int:
     return max(1, len(text) // 4)
 
 
-def generate_offer(
+async def generate_offer(
     project: ProjectData,
     enable_web_search: bool = True,
     export_pdf: bool = True,
     generate_cost_table: bool = True,
     language: str = "en",
-) -> Iterator[dict]:
+) -> AsyncIterator[dict]:
     """
-    Generator that yields progress dicts and finally yields result paths.
+    Async generator that yields progress dicts and finally yields result paths.
     Each yield: {'status': 'progress'|'done'|'error', 'section': str, 'message': str}
     Final yield: {'status': 'done', 'docx': str, 'pdf': str | None}
+    Blocking LLM calls run in a thread pool via asyncio.to_thread() so the
+    event loop stays free to handle other requests during generation.
     """
     sections = {}
+    _current_section = "init"
 
     def _step(name: str):
         yield {"status": "progress", "section": name, "message": f"Generating {name}…"}
@@ -66,57 +73,68 @@ def generate_offer(
     _total_start = time.time()
 
     try:
+        _current_section = "thank_you"
         yield {"status": "progress", "section": "thank_you", "message": "Generating thank-you paragraph…"}
         _t0 = time.time()
-        sections["thankyou"] = generate_thankyou(project, language=language)
+        sections["thankyou"] = await asyncio.to_thread(generate_thankyou, project, language=language)
         yield {"status": "stats", "section": "thank_you", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["thankyou"])}
 
+        _current_section = "section1"
         yield {"status": "progress", "section": "section1", "message": "Generating Section 1: Background and Goals…"}
         _t0 = time.time()
-        sections["section1"] = generate_section1(project, enable_web_search=enable_web_search, language=language)
+        sections["section1"] = await asyncio.to_thread(generate_section1, project, enable_web_search=enable_web_search, language=language)
         yield {"status": "stats", "section": "section1", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section1"])}
 
+        _current_section = "section2"
         yield {"status": "progress", "section": "section2", "message": "Generating Section 2: Cost Estimation…"}
         _t0 = time.time()
-        sections["section2"] = generate_section2(project, language=language)
+        sections["section2"] = await asyncio.to_thread(generate_section2, project, language=language)
         yield {"status": "stats", "section": "section2", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section2"])}
 
+        _current_section = "section3"
         yield {"status": "progress", "section": "section3", "message": "Generating Section 3: Timetable…"}
         _t0 = time.time()
-        sections["section3"] = generate_timetable(project, language=language)
+        sections["section3"] = await asyncio.to_thread(generate_timetable, project, language=language)
         yield {"status": "stats", "section": "section3", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section3"])}
 
+        _current_section = "section4"
         yield {"status": "progress", "section": "section4", "message": "Generating Section 4: Restrictions…"}
         _t0 = time.time()
-        sections["section4"] = generate_restrictions(project, language=language)
+        sections["section4"] = await asyncio.to_thread(generate_restrictions, project, language=language)
         yield {"status": "stats", "section": "section4", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section4"])}
 
+        _current_section = "section5"
         yield {"status": "progress", "section": "section5", "message": "Generating Section 5: Material Transformation…"}
         _t0 = time.time()
-        sections["section5"] = generate_material(project, language=language)
+        sections["section5"] = await asyncio.to_thread(generate_material, project, language=language)
         yield {"status": "stats", "section": "section5", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section5"])}
 
+        _current_section = "section6"
         yield {"status": "progress", "section": "section6", "message": "Loading Section 6: Documentation (boilerplate)…"}
         _t0 = time.time()
         sections["section6"] = read_boilerplate("documentation", language=language)
         yield {"status": "stats", "section": "section6", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section6"])}
 
+        _current_section = "section7"
         yield {"status": "progress", "section": "section7", "message": "Loading Section 7: Quality Assurance (SKOL)…"}
         _t0 = time.time()
         sections["section7"] = read_boilerplate("quality", language=language)
         yield {"status": "stats", "section": "section7", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section7"])}
 
+        _current_section = "section8"
         yield {"status": "progress", "section": "section8", "message": "Generating Section 8: Project Team (CV matching)…"}
         _t0 = time.time()
-        sections["section8"] = generate_section8(project, language=language)
+        sections["section8"] = await asyncio.to_thread(generate_section8, project, language=language)
         yield {"status": "stats", "section": "section8", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section8"])}
 
+        _current_section = "section9"
         yield {"status": "progress", "section": "section9", "message": "Loading Section 9: Delivery Terms (boilerplate)…"}
         _t0 = time.time()
         sections["section9"] = read_boilerplate("delivery", language=language)
         sections["section9_payment"] = read_boilerplate_dated("payment", project.document_date, language=language)
         yield {"status": "stats", "section": "section9", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section9"])}
 
+        _current_section = "section10"
         yield {"status": "progress", "section": "section10", "message": "Generating Section 10: Contact Information…"}
         _t0 = time.time()
         salesperson_contact = _load_salesperson(project.salesperson_name)
@@ -128,9 +146,10 @@ def generate_offer(
         sections["section10_text"] = generate_contact_text(project, language=language, salesperson_contact=salesperson_contact)
         yield {"status": "stats", "section": "section10", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section10_text"])}
 
+        _current_section = "docx"
         yield {"status": "progress", "section": "docx", "message": "Assembling DOCX document…"}
         _t0 = time.time()
-        docx_path = build_offer_document(project, sections, salesperson_contact, language=language)
+        docx_path = await asyncio.to_thread(build_offer_document, project, sections, salesperson_contact, language=language)
         yield {"status": "stats", "section": "docx", "elapsed_s": round(time.time() - _t0, 1), "tokens": 0}
 
         xlsx_path = None
@@ -142,6 +161,7 @@ def generate_offer(
 
         pdf_path = None
         if export_pdf:
+            _current_section = "pdf"
             yield {"status": "progress", "section": "pdf", "message": "Converting to PDF…"}
             _t0 = time.time()
             try:
@@ -161,7 +181,17 @@ def generate_offer(
         }
 
     except Exception as e:
-        yield {"status": "error", "section": "unknown", "message": str(e)}
+        logger.error(
+            "Offer generation failed at section %r: %s",
+            _current_section, e, exc_info=True,
+        )
+        yield {"status": "error", "section": _current_section, "message": str(e)}
+    finally:
+        logger.info(
+            "generate_offer finished in %.1fs (last_section=%s)",
+            time.time() - _total_start,
+            _current_section,
+        )
 
 
 def regenerate_section(

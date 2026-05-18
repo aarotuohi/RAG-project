@@ -1,9 +1,17 @@
 """
 FastAPI application entry point.
 """
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 import os
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,
+)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +21,8 @@ from backend.routes.api import router
 from backend.ollama_client import ensure_ollama_running
 from backend.ingestion.ingestion_queue import start_worker
 import backend.config as cfg
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -24,14 +34,14 @@ async def lifespan(app: FastAPI):
     try:
         ensure_ollama_running()
     except RuntimeError as e:
-        print(f"[AISALES] WARNING: {e}")
+        logger.warning("%s", e)
 
     # Use the standard model from config unless explicitly overridden via env var
     if os.environ.get("OLLAMA_LLM_MODEL"):
         cfg.OLLAMA_LLM_MODEL = os.environ["OLLAMA_LLM_MODEL"]
     else:
         os.environ["OLLAMA_LLM_MODEL"] = cfg.OLLAMA_LLM_MODEL
-    print(f"[AISALES] Using model: {cfg.OLLAMA_LLM_MODEL}")
+    logger.info("Using model: %s", cfg.OLLAMA_LLM_MODEL)
     # -- Claude alternative: replace the four lines above with:
     # print(f"[AISALES] LLM: Anthropic {cfg.ANTHROPIC_MODEL}")
     # print(f"[AISALES] Embeddings: Ollama {cfg.OLLAMA_EMBED_MODEL}")

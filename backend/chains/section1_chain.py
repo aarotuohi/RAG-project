@@ -4,12 +4,15 @@ Section 1 chain — Background and goals.
   Part B: Goals and constraints extracted from the transcript.
 """
 from __future__ import annotations
+import logging
 import re
 import requests
 from urllib.parse import quote, urlparse, urljoin
 from langchain_core.prompts import PromptTemplate
 from backend.ollama_client import get_llm
 from backend.chains.extraction_chain import ProjectData
+
+logger = logging.getLogger(__name__)
 
 _HEADERS = {
     "User-Agent": (
@@ -93,7 +96,7 @@ def _find_homepage_url(company_name: str) -> str | None:
                 found = re.findall(r'class="result__url"[^>]*>\s*(https?://[^\s<"]+)', resp.text)
             urls.extend(found)
         except Exception as e:
-            print(f"[section1] DuckDuckGo query '{query}' failed: {e}")
+            logger.warning("DuckDuckGo query %r failed: %s", query, e)
         if urls:
             break  # found something, no need for further queries
 
@@ -114,7 +117,7 @@ def _find_homepage_url(company_name: str) -> str | None:
             try:
                 r = requests.head(candidate, headers=_HEADERS, timeout=5, allow_redirects=True)
                 if r.status_code < 400:
-                    print(f"[section1] Fallback probe succeeded: {candidate}")
+                    logger.debug("Fallback probe succeeded: %s", candidate)
                     return candidate
             except Exception:
                 continue
@@ -178,16 +181,16 @@ def _get_company_content(company_name: str) -> str:
     """Find homepage and about page; return combined clean text content."""
     homepage = _find_homepage_url(company_name)
     if not homepage:
-        print(f"[section1] Could not find homepage for '{company_name}'")
+        logger.warning("Could not find homepage for %r", company_name)
         return ""
-    print(f"[section1] Found homepage: {homepage}")
+    logger.info("Found homepage: %s", homepage)
 
     parts: list[str] = []
     try:
         html, text = _fetch_page(homepage)
         if text:
             parts.append(text[:2500])
-        print(f"[section1] Homepage: {len(text)} chars extracted")
+        logger.debug("Homepage: %d chars extracted", len(text))
 
         about_url = _find_about_url(homepage, html)
         if about_url:
@@ -195,11 +198,11 @@ def _get_company_content(company_name: str) -> str:
                 _, about_text = _fetch_page(about_url)
                 if about_text:
                     parts.append(about_text[:2500])
-                print(f"[section1] About page ({about_url}): {len(about_text)} chars extracted")
+                logger.debug("About page (%s): %d chars extracted", about_url, len(about_text))
             except Exception as e:
-                print(f"[section1] About page fetch failed ({about_url}): {e}")
+                logger.warning("About page fetch failed (%s): %s", about_url, e)
     except Exception as e:
-        print(f"[section1] Homepage fetch failed ({homepage}): {e}")
+        logger.warning("Homepage fetch failed (%s): %s", homepage, e)
 
     return "\n\n---\n\n".join(parts)
 

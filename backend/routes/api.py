@@ -3,6 +3,7 @@ API routes — /api/status, /api/open-file-dialog, /api/upload-transcript,
               /api/extract-path, /api/generate, /api/download, /api/outputs
 """
 from __future__ import annotations
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile, File as FastAPIFile
@@ -124,13 +125,13 @@ class ExtractPathRequest(BaseModel):
 
 
 @router.post("/extract-path")
-def extract_transcript(req: ExtractPathRequest):
+async def extract_transcript(req: ExtractPathRequest):
     """Extract structured project data from a local transcript file."""
     src = Path(req.file_path)
     if not src.exists() or not src.is_file():
         raise HTTPException(status_code=400, detail=f"File not found: {req.file_path}")
     try:
-        return project_data_to_dict(extract_from_file(src))
+        return project_data_to_dict(await asyncio.to_thread(extract_from_file, src))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -146,12 +147,12 @@ class GenerateRequest(BaseModel):
 
 
 @router.post("/generate")
-def generate(req: GenerateRequest):
+async def generate(req: GenerateRequest):
     """Generate the full offer document. Returns a streaming NDJSON response with progress events."""
     project = ProjectData(**{k: v for k, v in req.project.items() if k in ProjectData.__dataclass_fields__})
 
-    def event_stream():
-        for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.generate_cost_table, req.document_language):
+    async def event_stream():
+        async for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.generate_cost_table, req.document_language):
             # Pad to >1KB so TCP/proxy buffers flush immediately on every event
             line = json.dumps(event) + "\n"
             yield line + (" " * max(0, 1024 - len(line))) + "\n"
