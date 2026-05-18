@@ -190,18 +190,18 @@ def _historical_rates(historical_data: str) -> dict[str, float]:
         if rate > 0:
             totals.setdefault(cat, []).append(rate)
 
-    result: dict[str, float] = dict(CATEGORY_RATES)  
+    result: dict[str, float] = {}
     for cat, rates in totals.items():
         avg = round(sum(rates) / len(rates))
-       
+        # Normalise to the canonical WORK_CATEGORIES spelling (case-insensitive)
         matched = next(
-            (k for k in result if k.lower() == cat.lower()),
+            (k for k in WORK_CATEGORIES if k.lower() == cat.lower()),
             None,
         )
         if matched:
             result[matched] = avg
         else:
-            result[cat] = avg   
+            result[cat] = avg
     return result
 
 
@@ -338,10 +338,24 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
         desc_prompt += f"\n\n{lang_note}"
     description_text = llm.invoke(desc_prompt).strip()
 
-    # Compute data-driven fallback rates from the retrieved historical chunks.
-    # These replace the hardcoded CATEGORY_RATES in the prompt so that even
-    # sub-steps with no direct historical match get a rate derived from real data.
+    # Derive hourly rates exclusively from historical data.
+    # CATEGORY_RATES is used only when the cost_history collection is empty.
     fallback_rates = _historical_rates(historical_data)
+    if fallback_rates:
+        _rate_lines = [
+            f"  - {cat}: {fallback_rates[cat]}€/h"
+            for cat in WORK_CATEGORIES if cat in fallback_rates
+        ] + [
+            f"  - {cat}: {rate}€/h"
+            for cat, rate in fallback_rates.items() if cat not in WORK_CATEGORIES
+        ]
+        _categories_str = "\n".join(_rate_lines) or "  (Derive rates directly from the historical phases above)"
+    else:
+        # No historical data ingested yet — show defaults so the LLM can still produce numbers
+        _categories_str = "\n".join(
+            f"  - {cat}: {CATEGORY_RATES[cat]}€/h (default — add historical cost data for real rates)"
+            for cat in WORK_CATEGORIES
+        )
 
     # --- Step 2: Generate structured cost estimate ---
     est_kwargs = dict(
@@ -351,10 +365,7 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
         required_expertise=project.required_expertise or ("Ei määritelty" if is_fi else "Not specified"),
         payment_type=project.payment_type or "hourly",
         historical_data=historical_data[:8000],
-        categories="\n".join(
-            f"  - {cat}: {fallback_rates.get(cat, CATEGORY_RATES.get(cat, 90))}€/h"
-            for cat in WORK_CATEGORIES
-        ),
+        categories=_categories_str,
     )
     if not is_fi:
         est_kwargs["output_language"] = "English"
