@@ -5,7 +5,7 @@ interface Props {
   lang: Lang
 }
 interface ProjectData {
-  first_name: string; last_name: string; company_name: string
+  customer_name: string; company_name: string
   address: string; postal_code: string; project_name: string
   project_number: string; salesperson_name: string; document_date: string
   project_start: string; project_end: string; goals: string
@@ -43,7 +43,7 @@ const fmtEur = (v: number) =>
 const formatDateFi = (d: Date) => `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`
 
 const EMPTY: ProjectData = {
-  first_name:'', last_name:'', company_name:'', address:'', postal_code:'',
+  customer_name:'', company_name:'', address:'', postal_code:'',
   project_name:'', project_number:'', salesperson_name:'', document_date:'',
   project_start:'', project_end:'', goals:'', constraints:'',
   payment_type:'hourly', material_deliverables:'', required_expertise:'', other_notes:''
@@ -360,8 +360,7 @@ export default function NewOfferTab({ lang }: Props) {
               {t('step2_desc', lang)}
             </p>
             <div className="form-grid">
-              <Field label={t('first_name', lang)} name="first_name" value={project.first_name} onChange={set} />
-              <Field label={t('last_name', lang)} name="last_name" value={project.last_name} onChange={set} />
+              <Field label={t('customer_name', lang)} name="customer_name" value={project.customer_name} onChange={set} />
               <Field label={t('company_name', lang)} name="company_name" value={project.company_name} onChange={set} />
               <Field label={t('doc_date', lang)} name="document_date" value={project.document_date} onChange={set} />
               <Field label={t('address', lang)} name="address" value={project.address} onChange={set} />

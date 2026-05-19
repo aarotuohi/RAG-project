@@ -307,7 +307,7 @@ def build_offer_document(
 
     # ── Header block ─────────────────────────────────────────────────────────
     _add_paragraph(doc, doc_date)
-    _add_paragraph(doc, f"{project.first_name} {project.last_name}".strip())
+    _add_paragraph(doc, project.customer_name)
     _add_paragraph(doc, project.company_name)
     _add_paragraph(doc, project.address)
     _add_paragraph(doc, project.postal_code)

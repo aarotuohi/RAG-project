@@ -321,8 +321,7 @@ def build_cost_excel(project: ProjectData, section2: dict,
 
 def _customer_label(project: ProjectData) -> str:
     """Build a display name for the customer field."""
-    parts = [p for p in [project.first_name, project.last_name] if p]
-    name = " ".join(parts) if parts else ""
+    name = project.customer_name
     if project.company_name:
         return f"{project.company_name}{(' / ' + name) if name else ''}"
     return name

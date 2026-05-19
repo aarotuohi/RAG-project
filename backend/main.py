@@ -30,21 +30,14 @@ async def lifespan(app: FastAPI):
     # Start background ingestion worker
     start_worker()
 
-    # Start Ollama if it is not already running
+    # Start Ollama — still used for embeddings (nomic-embed-text)
     try:
         ensure_ollama_running()
     except RuntimeError as e:
         logger.warning("%s", e)
 
-    # Use the standard model from config unless explicitly overridden via env var
-    if os.environ.get("OLLAMA_LLM_MODEL"):
-        cfg.OLLAMA_LLM_MODEL = os.environ["OLLAMA_LLM_MODEL"]
-    else:
-        os.environ["OLLAMA_LLM_MODEL"] = cfg.OLLAMA_LLM_MODEL
-    logger.info("Using model: %s", cfg.OLLAMA_LLM_MODEL)
-    # -- Claude alternative: replace the four lines above with:
-    # print(f"[AISALES] LLM: Anthropic {cfg.ANTHROPIC_MODEL}")
-    # print(f"[AISALES] Embeddings: Ollama {cfg.OLLAMA_EMBED_MODEL}")
+    logger.info("LLM: Anthropic %s", cfg.ANTHROPIC_MODEL)
+    logger.info("Embeddings: Ollama %s", cfg.OLLAMA_EMBED_MODEL)
 
     yield  # app is running
 

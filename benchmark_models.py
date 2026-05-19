@@ -64,7 +64,7 @@ EXPECTED_EXTRACTION = {
     "company_name": "patria",          # lowercase for fuzzy match
     "project_name": "helmet",
     "payment_type": "fixed",
-    "first_name":   "john",
+    "customer_name": "john doe",
     "salesperson_name": "alex",
 }
 
@@ -185,7 +185,7 @@ for model in MODELS:
         print("\n  TEST 1 — Extraction (transcript → structured JSON)")
         extraction_prompt = f"""Extract the following fields from this transcript as JSON.
 Use empty string for missing fields.
-Fields: first_name, last_name, company_name, project_name, salesperson_name,
+Fields: customer_name, company_name, project_name, salesperson_name,
         project_start, project_end, payment_type, goals, required_expertise
 
 TRANSCRIPT:

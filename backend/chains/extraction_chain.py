@@ -29,8 +29,7 @@ _CHUNK_OVERLAP = 400   # overlap so nothing is lost at chunk boundaries
 @dataclass
 class ProjectData:
     # Customer / offer header
-    first_name: str = ""
-    last_name: str = ""
+    customer_name: str = ""
     company_name: str = ""
     address: str = ""
     postal_code: str = ""
@@ -64,8 +63,7 @@ _EXTRACTION_PROMPT = PromptTemplate.from_template(
 Extract ONLY the following fields and return valid JSON. Use empty string "" for missing fields.
 
 Fields to extract:
-- first_name: first name of the customer/recipient of the offer
-- last_name: last name of the customer/recipient
+- customer_name: full name of the customer/recipient of the offer
 - company_name: name of the customer company
 - address: street address of the customer
 - postal_code: postal code of the customer
@@ -111,7 +109,7 @@ def _split_transcript(text: str) -> list[str]:
 
 
 _SCALAR_FIELDS = {
-    "first_name", "last_name", "company_name", "address", "postal_code",
+    "customer_name", "company_name", "address", "postal_code",
     "project_name", "project_number", "salesperson_name",
     "document_date", "project_start", "project_end", "payment_type",
 }

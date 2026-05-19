@@ -6,14 +6,11 @@ import subprocess
 import time
 import requests
 import platform
-from langchain_ollama import OllamaLLM, OllamaEmbeddings
-# -- Claude alternative: uncomment these two imports, comment out the OllamaLLM import above
-# from langchain_anthropic import ChatAnthropic
-# from langchain_core.output_parsers import StrOutputParser
+from langchain_ollama import OllamaEmbeddings
+from langchain_anthropic import ChatAnthropic
+from langchain_core.output_parsers import StrOutputParser
 
-from backend.config import OLLAMA_BASE_URL, OLLAMA_LLM_MODEL, OLLAMA_EMBED_MODEL, OLLAMA_NUM_CTX
-# -- Claude alternative: replace the import above with:
-# from backend.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, ANTHROPIC_API_KEY, ANTHROPIC_MODEL
+from backend.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 
 
 def _get_available_ram_gb() -> float:
@@ -76,27 +73,19 @@ def pull_model_if_missing(model_name: str):
     subprocess.run(["ollama", "pull", model_name], check=True)
 
 
-_llm: OllamaLLM | None = None
+_llm = None
 _embeddings: OllamaEmbeddings | None = None
 
 
-def get_llm(model: str | None = None, num_ctx: int | None = None) -> OllamaLLM:
+def get_llm(**kwargs):
     global _llm
-    resolved = model or OLLAMA_LLM_MODEL
-    ctx = num_ctx or OLLAMA_NUM_CTX
-    if _llm is None or _llm.model != resolved or _llm.num_ctx != ctx:
-        _llm = OllamaLLM(model=resolved, base_url=OLLAMA_BASE_URL, temperature=0.2, num_ctx=ctx)
+    if _llm is None:
+        _llm = ChatAnthropic(
+            model=ANTHROPIC_MODEL,
+            api_key=ANTHROPIC_API_KEY,
+            temperature=0.2,
+        ) | StrOutputParser()
     return _llm
-# -- Claude alternative: replace the get_llm function above with:
-# def get_llm(**kwargs):
-#     global _llm
-#     if _llm is None:
-#         _llm = ChatAnthropic(
-#             model=ANTHROPIC_MODEL,
-#             api_key=ANTHROPIC_API_KEY,
-#             temperature=0.2,
-#         ) | StrOutputParser()
-#     return _llm
 
 
 def get_embeddings() -> OllamaEmbeddings:
