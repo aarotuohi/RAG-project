@@ -1,13 +1,13 @@
 """
 Contact parser — reads salesperson contact details from Excel, Word, or PDF.
-Returns a dict: { normalized_name: {name, title, phone, email} }
+Returns a dict: { normalized_name: {name, title, phone, email, team} }
 """
 from __future__ import annotations
 import re
 from pathlib import Path
 
 
-SalespersonRecord = dict  # keys: name, title, phone, email
+SalespersonRecord = dict  # keys: name, title, phone, email, team
 
 
 def _normalize(name: str) -> str:
@@ -26,21 +26,38 @@ def parse_excel(path: Path) -> dict[str, SalespersonRecord]:
         df.columns = [str(c).strip().lower() for c in df.columns]
 
         col_map = {
-            "name":  next((c for c in df.columns if "name" in c or "nimi" in c), None),
-            "title": next((c for c in df.columns if "title" in c or "titteli" in c or "rooli" in c or "role" in c), None),
-            "phone": next((c for c in df.columns if "phone" in c or "puh" in c or "puhelin" in c), None),
-            "email": next((c for c in df.columns if "email" in c or "mail" in c or "sähkö" in c), None),
+            "name":       next((c for c in df.columns if c in ("name", "nimi")), None),
+            "firstname":  next((c for c in df.columns if "firstname" in c or "first_name" in c or c == "etunimi"), None),
+            "lastname":   next((c for c in df.columns if "lastname" in c or "last_name" in c or c == "sukunimi"), None),
+            "title":      next((c for c in df.columns if "title" in c or "titles" in c or "titteli" in c or "rooli" in c or "role" in c), None),
+            "phone":      next((c for c in df.columns if "phone" in c or "puh" in c or "puhelin" in c), None),
+            "email":      next((c for c in df.columns if "email" in c or "mail" in c or "sähkö" in c), None),
+            "team":       next((c for c in df.columns if c in ("tiimi", "team", "osasto", "department")), None),
         }
 
         for _, row in df.iterrows():
-            name = str(row.get(col_map["name"], "")).strip() if col_map["name"] else ""
-            if not name or name.lower() in ("nan", "name", "nimi"):
+            # Build full name: prefer combined "name" column, else join first+last
+            if col_map["name"]:
+                name = str(row.get(col_map["name"], "")).strip()
+            elif col_map["firstname"] and col_map["lastname"]:
+                first = str(row.get(col_map["firstname"], "")).strip()
+                last  = str(row.get(col_map["lastname"],  "")).strip()
+                name  = f"{first} {last}".strip()
+            elif col_map["firstname"]:
+                name = str(row.get(col_map["firstname"], "")).strip()
+            elif col_map["lastname"]:
+                name = str(row.get(col_map["lastname"], "")).strip()
+            else:
+                name = ""
+
+            if not name or name.lower() in ("nan", "name", "nimi", " "):
                 continue
             records[_normalize(name)] = {
                 "name":  name,
                 "title": str(row.get(col_map["title"], "")).strip() if col_map["title"] else "",
                 "phone": str(row.get(col_map["phone"], "")).strip() if col_map["phone"] else "",
                 "email": str(row.get(col_map["email"], "")).strip() if col_map["email"] else "",
+                "team":  str(row.get(col_map["team"],  "")).strip() if col_map["team"]  else "",
             }
     return records
 

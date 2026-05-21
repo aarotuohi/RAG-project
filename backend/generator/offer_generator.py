@@ -41,6 +41,19 @@ def _load_salesperson(salesperson_name: str) -> dict | None:
     return None
 
 
+def _load_all_contacts() -> list[dict]:
+    """Return every contact record found across all files in CONTACTS_DIR."""
+    all_records: list[dict] = []
+    for f in CONTACTS_DIR.iterdir():
+        if f.suffix.lower() in (".xlsx", ".xls", ".docx", ".pdf"):
+            try:
+                records = parse_contact_file(f)
+                all_records.extend(records.values())
+            except Exception:
+                continue
+    return all_records
+
+
 def _estimate_tokens(value) -> int:
     """Rough token count from output size: ~4 chars per token."""
     if isinstance(value, str):
@@ -122,9 +135,12 @@ async def generate_offer(
         yield {"status": "stats", "section": "section7", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section7"])}
 
         _current_section = "section8"
-        yield {"status": "progress", "section": "section8", "message": "Generating Section 8: Project Team (CV matching)…"}
+        yield {"status": "progress", "section": "section8", "message": "Generating Section 8: Project Team…"}
         _t0 = time.time()
-        sections["section8"] = await asyncio.to_thread(generate_section8, project, language=language)
+        team_contacts = _load_all_contacts()
+        sections["section8"] = await asyncio.to_thread(
+            generate_section8, project, language=language, contacts=team_contacts or None
+        )
         yield {"status": "stats", "section": "section8", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section8"])}
 
         _current_section = "section9"

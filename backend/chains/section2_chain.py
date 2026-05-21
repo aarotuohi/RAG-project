@@ -6,6 +6,7 @@ then computes the grand total programmatically.
 """
 from __future__ import annotations
 import json
+import logging
 import re
 
 from langchain_core.prompts import PromptTemplate
@@ -15,6 +16,8 @@ from backend.vectorstore.chroma_client import get_collection
 from backend.config import CHROMA_COLLECTION_COST, WORK_CATEGORIES, CATEGORY_RATES
 from backend.chains.extraction_chain import ProjectData
 from backend.ingestion.excel_parser import CostSubStep, CostStepGroup
+
+logger = logging.getLogger(__name__)
 
 
 _ESTIMATION_PROMPT = PromptTemplate.from_template(
@@ -206,9 +209,18 @@ def _historical_rates(historical_data: str) -> dict[str, float]:
 
 
 def _clean_json(text: str) -> str:
+    # Strip markdown fences
     text = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text.strip())
-    return text.strip()
+    text = text.strip()
+    # Claude sometimes adds preamble text before the JSON array/object.
+    # Find the first [ or { and the matching last ] or }.
+    for open_ch, close_ch in (("[", "]"), ("{", "}")):
+        start = text.find(open_ch)
+        end   = text.rfind(close_ch)
+        if start != -1 and end != -1 and end > start:
+            return text[start:end + 1]
+    return text
 
 
 def _detect_project_category(description: str, k: int = 20) -> list[str]:
@@ -415,8 +427,11 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
                 ))
             except Exception:
                 continue
-    except json.JSONDecodeError:
-        pass
+    except json.JSONDecodeError as e:
+        logger.error(
+            "section2 JSON parse failed: %s\nRaw response (first 500 chars): %s",
+            e, cleaned[:500]
+        )
 
     grand_total = round(sum(sg.total_cost for sg in step_groups), 2)
 

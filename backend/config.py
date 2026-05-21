@@ -31,8 +31,9 @@ for _d in [
 # Ollama settings
 OLLAMA_BASE_URL    = os.environ.get("OLLAMA_BASE_URL",   "http://localhost:11434")
 OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL    = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+ANTHROPIC_API_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL      = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251022")
+ANTHROPIC_MAX_TOKENS = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "4096"))
 
 # ChromaDB settings 
 CHROMA_COLLECTION_COST     = "cost_history"

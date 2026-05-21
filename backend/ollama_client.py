@@ -10,7 +10,7 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_anthropic import ChatAnthropic
 from langchain_core.output_parsers import StrOutputParser
 
-from backend.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, ANTHROPIC_API_KEY, ANTHROPIC_MODEL
+from backend.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, ANTHROPIC_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_MAX_TOKENS, ANTHROPIC_MAX_TOKENS
 
 
 def _get_available_ram_gb() -> float:
@@ -84,6 +84,7 @@ def get_llm(**kwargs):
             model=ANTHROPIC_MODEL,
             api_key=ANTHROPIC_API_KEY,
             temperature=0.2,
+            max_tokens=ANTHROPIC_MAX_TOKENS,
         ) | StrOutputParser()
     return _llm
 

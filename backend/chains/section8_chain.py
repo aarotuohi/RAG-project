@@ -1,7 +1,8 @@
 """
 Section 8 chain — Project team.
-Queries the CV database to find the best-fit experts for the project.
-No LLM summaries — only name, title, and role description from CV files.
+Queries the CV database to find the best-fit experts for the project,
+or selects from a contacts list (loaded from the contacts Excel) when available.
+No LLM summaries — only name, title, and role description from CV/contact files.
 """
 from __future__ import annotations
 import re
@@ -78,16 +79,74 @@ def _extract_selected(ranking_text: str) -> list[tuple[str, str]]:
     return results
 
 
-def generate_section8(project: ProjectData, language: str = "en") -> dict:
+def generate_section8(project: ProjectData, language: str = "en", contacts: list[dict] | None = None) -> dict:
     """
     Returns:
       {
         'intro_text': str,
-        'experts': [{'name': str, 'title': str, 'role': str}]
+        'experts': [{'name': str, 'title': str, 'team': str, 'role': str}]
       }
-    No LLM summaries. Name and title come directly from CV files.
-    Role description is determined by the ranking LLM (one sentence).
+
+    If `contacts` is provided (list of SalespersonRecord dicts loaded from the
+    contacts Excel), the LLM selects the most suitable team members from that
+    list.  Falls back to CV-based ChromaDB retrieval otherwise.
     """
+    if contacts:
+        return _generate_from_contacts(project, contacts, language)
+    return _generate_from_cvs(project, language)
+
+
+def _generate_from_contacts(project: ProjectData, contacts: list[dict], language: str) -> dict:
+    """Select project team members from the contacts Excel using the LLM."""
+    llm = get_llm()
+
+    expert_summaries = ""
+    for i, c in enumerate(contacts, 1):
+        name  = c.get("name", f"Expert {i}")
+        title = c.get("title", "—")
+        team  = c.get("team", "")
+        line  = f"{i}. {name} | Title: {title}"
+        if team:
+            line += f" | Team: {team}"
+        expert_summaries += line + "\n"
+
+    lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
+    ranking_prompt = _RANKING_PROMPT.format(
+        project_name=project.project_name or "New Project",
+        goals=project.goals or "Not specified",
+        required_expertise=project.required_expertise or "Not specified",
+        categories_needed=project.required_expertise or "General",
+        constraints=project.constraints or "None",
+        expert_summaries=expert_summaries[:5000],
+    ) + f"\n\n{lang_note}"
+
+    ranking_response = llm.invoke(ranking_prompt)
+    selected = _extract_selected(ranking_response)
+
+    experts = []
+    for name, role in selected:
+        matched = next(
+            (c for c in contacts if name.lower() in c.get("name", "").lower()),
+            None,
+        )
+        if not matched:
+            continue
+        experts.append({
+            "name":  matched.get("name", name),
+            "title": matched.get("title", "—"),
+            "team":  matched.get("team", ""),
+            "role":  role,
+        })
+
+    if language == "fi":
+        intro_text = "Ehdotamme seuraavia asiantuntijoita projektille:"
+    else:
+        intro_text = "We suggest the following experts for the project:"
+
+    return {"intro_text": intro_text, "experts": experts}
+
+
+def _generate_from_cvs(project: ProjectData, language: str) -> dict:
     llm = get_llm()
 
     query = (

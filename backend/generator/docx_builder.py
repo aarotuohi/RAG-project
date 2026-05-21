@@ -386,7 +386,12 @@ def build_offer_document(
     for expert in s8.get("experts", []):
         doc.add_paragraph()
         _add_paragraph(doc, expert.get("name", ""), bold=True)
-        _add_paragraph(doc, expert.get("cv_summary", ""))
+        if expert.get("title"):
+            _add_paragraph(doc, expert["title"], italic=True)
+        if expert.get("team"):
+            _add_paragraph(doc, expert["team"], italic=True)
+        if expert.get("role"):
+            _add_paragraph(doc, expert["role"])
     doc.add_paragraph()
 
     # ── Section 9 ─────────────────────────────────────────────────────────────
