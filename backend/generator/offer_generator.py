@@ -4,6 +4,7 @@ Runs sections sequentially and yields progress events.
 """
 from __future__ import annotations
 import asyncio
+import dataclasses
 import json
 import logging
 import time
@@ -22,9 +23,75 @@ from backend.generator.docx_builder import build_offer_document
 from backend.generator.pdf_converter import convert_to_pdf
 from backend.generator.excel_builder import build_cost_excel
 from backend.ingestion.contact_parser import parse_contact_file
+from backend.ingestion.excel_parser import CostStepGroup, CostSubStep
 from backend.config import CONTACTS_DIR
 
 logger = logging.getLogger(__name__)
+
+# Maps the section_key used in the regen request to the key used inside the sections dict
+_REGEN_KEY_TO_SECTIONS_KEY: dict[str, str] = {
+    "thank_you": "thankyou",
+    "section1":  "section1",
+    "section2":  "section2",
+    "section3":  "section3",
+    "section4":  "section4",
+    "section5":  "section5",
+    "section6":  "section6",
+    "section7":  "section7",
+    "section8":  "section8",
+    "section9":  "section9",
+    "section10": "section10_text",
+}
+
+
+def _sections_to_json(sections: dict) -> dict:
+    """Convert sections dict to a JSON-serialisable form (handles CostStepGroup dataclasses)."""
+    out: dict = {}
+    for k, v in sections.items():
+        if k == "section2" and isinstance(v, dict) and "steps" in v:
+            steps_data = [
+                dataclasses.asdict(s) if hasattr(s, "__dataclass_fields__") else s
+                for s in v.get("steps", [])
+            ]
+            out[k] = {**v, "steps": steps_data}
+        else:
+            out[k] = v
+    return out
+
+
+def _reconstruct_step_group(d: dict) -> CostStepGroup:
+    sub_steps = [
+        CostSubStep(
+            name=str(ss.get("name", "")),
+            category=str(ss.get("category", "Service development")),
+            hourly_rate=float(ss.get("hourly_rate", 0)),
+            hours=float(ss.get("hours", 0)),
+            persons=int(ss.get("persons", 1)),
+        )
+        for ss in d.get("sub_steps", [])
+        if isinstance(ss, dict)
+    ]
+    return CostStepGroup(
+        step_id=str(d.get("step_id", "")),
+        name=str(d.get("name", "")),
+        output=str(d.get("output", "")),
+        sub_steps=sub_steps,
+    )
+
+
+def _sections_from_json(data: dict) -> dict:
+    """Reconstruct sections dict from JSON (restores CostStepGroup objects for section2)."""
+    sections: dict = {}
+    for k, v in data.items():
+        if k == "section2" and isinstance(v, dict) and "steps" in v:
+            steps = [
+                _reconstruct_step_group(sg) if isinstance(sg, dict) else sg
+                for sg in v.get("steps", [])
+            ]
+            sections[k] = {**v, "steps": steps}
+        else:
+            sections[k] = v
+    return sections
 
 
 def _load_all_contacts() -> list[dict]:
@@ -148,6 +215,17 @@ async def generate_offer(
         docx_path = await asyncio.to_thread(build_offer_document, project, sections, language=language)
         yield {"status": "stats", "section": "docx", "elapsed_s": round(time.time() - _t0, 1), "tokens": 0}
 
+        # Save sections cache alongside the DOCX so individual sections can be
+        # rebuilt later without regenerating the entire offer.
+        try:
+            sections_cache = docx_path.with_suffix(".sections.json")
+            sections_cache.write_text(
+                json.dumps(_sections_to_json(sections), ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+        except Exception as _cache_err:
+            logger.warning("Failed to save sections cache: %s", _cache_err)
+
         xlsx_path = None
         if generate_cost_table:
             try:
@@ -222,3 +300,81 @@ def regenerate_section(
         return {"section10_text": generate_contact_text(project, language=language)}
     else:
         raise ValueError(f"Unknown section key: {section_key}")
+
+
+def rebuild_offer_from_section(
+    docx_path: Path,
+    project: ProjectData,
+    section_key: str,
+    new_section_result: dict,
+    language: str = "en",
+    export_pdf: bool = False,
+) -> dict:
+    """Load cached sections, replace one section, rebuild DOCX (and Excel/PDF).
+
+    Args:
+        docx_path: Path to the existing DOCX (used to locate the sections cache).
+        project: Project data.
+        section_key: The regen key (e.g. "section2", "thank_you").
+        new_section_result: Return value of ``regenerate_section`` (keyed by section_key).
+        language: Document language.
+        export_pdf: Whether to also convert the new DOCX to PDF.
+
+    Returns:
+        Dict with at least ``docx`` (str path).  May also contain ``pdf`` and/or ``xlsx``.
+    """
+    sections_cache = docx_path.with_suffix(".sections.json")
+    if not sections_cache.exists():
+        raise FileNotFoundError(f"Sections cache not found: {sections_cache}")
+
+    sections = _sections_from_json(json.loads(sections_cache.read_text(encoding="utf-8")))
+
+    # Map the regen key to the sections dict key and get the new value
+    sections_key = _REGEN_KEY_TO_SECTIONS_KEY.get(section_key, section_key)
+    new_val = new_section_result.get(section_key)
+
+    # For section2, the raw result may still have CostStepGroup objects in steps;
+    # if it has plain dicts (already serialised), reconstruct the dataclasses.
+    if section_key == "section2" and isinstance(new_val, dict) and "steps" in new_val:
+        steps_raw = new_val.get("steps", [])
+        steps = [
+            s if hasattr(s, "__dataclass_fields__") else _reconstruct_step_group(s)
+            for s in steps_raw
+        ]
+        new_val = {**new_val, "steps": steps}
+
+    sections[sections_key] = new_val
+
+    # Rebuild DOCX
+    new_docx_path = build_offer_document(project, sections, language=language)
+
+    # Persist updated cache next to the new DOCX
+    try:
+        new_sections_cache = new_docx_path.with_suffix(".sections.json")
+        new_sections_cache.write_text(
+            json.dumps(_sections_to_json(sections), ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
+    except Exception as _cache_err:
+        logger.warning("Failed to save updated sections cache: %s", _cache_err)
+
+    result: dict = {"docx": str(new_docx_path)}
+
+    # Rebuild Excel when section2 was updated
+    if section_key == "section2":
+        try:
+            xlsx_path = build_cost_excel(project, sections["section2"], language=language)
+            result["xlsx"] = str(xlsx_path)
+        except Exception as _e:
+            logger.warning("Excel rebuild failed: %s", _e)
+
+    # Optionally convert to PDF
+    if export_pdf:
+        try:
+            pdf_path = convert_to_pdf(new_docx_path)
+            result["pdf"] = str(pdf_path)
+        except Exception as _e:
+            logger.warning("PDF rebuild failed: %s", _e)
+
+    return result
+

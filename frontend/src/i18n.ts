@@ -85,6 +85,11 @@ const translations = {
     sec_docx: 'Assembling DOCX',
     sec_pdf: 'Converting to PDF',
 
+    // Draft persistence
+    draft_restored: 'Draft restored',
+    draft_saved: 'Draft saved',
+    draft_clear: 'Clear draft',
+
     // Section regeneration
     regen_section_btn: '🔄',
     regen_section_running: '⏳',
@@ -187,6 +192,11 @@ const translations = {
     sec_section10: '10. Yhteystiedot',
     sec_docx: 'DOCX-kokoaminen',
     sec_pdf: 'PDF-muunnos',
+
+    // Draft persistence
+    draft_restored: 'Luonnos palautettu',
+    draft_saved: 'Luonnos tallennettu',
+    draft_clear: 'Tyhjennä luonnos',
 
     // Section regeneration
     regen_section_btn: '🔄',

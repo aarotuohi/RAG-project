@@ -177,6 +177,8 @@ class RegenerateSectionRequest(BaseModel):
     project: dict
     enable_web_search: bool = True
     document_language: str = "en"
+    docx_path: str | None = None   # current offer DOCX path; if set, DOCX is rebuilt
+    export_pdf: bool = True        # rebuild PDF when docx_path is provided
 
 
 @router.post("/regenerate-section")
@@ -192,16 +194,68 @@ async def regenerate_section_endpoint(req: RegenerateSectionRequest):
 
     async def event_stream():
         import time
+        import dataclasses as _dc
+        from backend.generator.excel_builder import build_cost_excel
+        from backend.generator.offer_generator import rebuild_offer_from_section
+
         progress_line = json.dumps({"status": "progress", "section": req.section_key, "message": f"Regenerating {req.section_key}\u2026"}) + "\n"
         yield progress_line + (" " * max(0, 1024 - len(progress_line))) + "\n"
         t0 = time.time()
         try:
-            result = await asyncio.to_thread(
+            raw_result = await asyncio.to_thread(
                 regenerate_section, project, req.section_key,
                 req.enable_web_search, req.document_language,
             )
             elapsed = round(time.time() - t0, 1)
-            done_line = json.dumps({"status": "done", "section": req.section_key, "result": result, "elapsed_s": elapsed}) + "\n"
+
+            # ── Serialise section2 steps for JSON transport ──────────────────
+            transport_result = raw_result
+            xlsx_path: str | None = None
+            if req.section_key == "section2":
+                sec2 = raw_result.get("section2", {})
+                steps = sec2.get("steps", [])
+                # Build standalone Excel even when not rebuilding full DOCX
+                if not req.docx_path:
+                    try:
+                        xlsx_file = await asyncio.to_thread(
+                            build_cost_excel, project, sec2, req.document_language
+                        )
+                        xlsx_path = str(xlsx_file)
+                    except Exception as _xe:
+                        pass
+                transport_result = {
+                    "section2": {
+                        "description_text": sec2.get("description_text", ""),
+                        "grand_total": sec2.get("grand_total", 0),
+                        "payment_type": sec2.get("payment_type", ""),
+                        "steps": [
+                            _dc.asdict(s) if hasattr(s, "__dataclass_fields__") else s
+                            for s in steps
+                        ],
+                        "xlsx": xlsx_path,
+                    }
+                }
+
+            # ── Rebuild full DOCX (and optionally PDF/Excel) ─────────────────
+            rebuilt: dict = {}
+            if req.docx_path:
+                try:
+                    rebuilt = await asyncio.to_thread(
+                        rebuild_offer_from_section,
+                        Path(req.docx_path), project, req.section_key,
+                        raw_result, req.document_language, req.export_pdf,
+                    )
+                except Exception as _re:
+                    pass  # non-fatal; frontend still shows regenerated content
+
+            done_payload: dict = {
+                "status": "done",
+                "section": req.section_key,
+                "result": transport_result,
+                "elapsed_s": elapsed,
+                **rebuilt,  # docx, pdf, xlsx if rebuild succeeded
+            }
+            done_line = json.dumps(done_payload) + "\n"
             yield done_line + (" " * max(0, 1024 - len(done_line))) + "\n"
         except Exception as e:
             error_line = json.dumps({"status": "error", "section": req.section_key, "message": str(e)}) + "\n"

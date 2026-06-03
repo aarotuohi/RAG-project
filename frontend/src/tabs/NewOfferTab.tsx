@@ -1,26 +1,10 @@
-import { useState, useRef, Fragment } from 'react'
+import { useState, useRef, Fragment, useEffect } from 'react'
 import { t, type Lang } from '../i18n'
 
 const REGENERATABLE_SECTIONS = new Set([
   'thank_you', 'section1', 'section2', 'section3', 'section4', 'section5', 'section8',
 ])
 
-function extractRegenText(sectionKey: string, content: any): string {
-  if (!content) return ''
-  const val = content[Object.keys(content)[0]]
-  if (typeof val === 'string') return val
-  if (sectionKey === 'section1') {
-    return [val?.company_background, val?.goals_text].filter(Boolean).join('\n\n')
-  }
-  if (sectionKey === 'section2') {
-    return `${val?.description_text ?? ''}\n\nGrand total: ${val?.grand_total ?? 0}\u20ac`
-  }
-  if (sectionKey === 'section8') {
-    const experts = (val?.experts ?? []).map((e: any) => `${e.name} (${e.title}) \u2014 ${e.role}`).join('\n')
-    return `${val?.intro_text ?? ''}\n${experts}`
-  }
-  return JSON.stringify(val, null, 2)
-}
 
 interface Props {
   lang: Lang
@@ -70,6 +54,36 @@ const EMPTY: ProjectData = {
   payment_type:'hourly', material_deliverables:'', required_expertise:'', other_notes:''
 }
 
+const DRAFT_KEY = 'aisales_offer_draft'
+
+interface DraftState {
+  project: ProjectData
+  webSearch: boolean
+  exportPdf: boolean
+  costTable: boolean
+  documentLanguage: 'en' | 'fi'
+}
+
+function loadDraft(): DraftState | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as DraftState
+  } catch {
+    return null
+  }
+}
+
+function saveDraft(state: DraftState) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(state))
+  } catch { /* quota exceeded — ignore */ }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+}
+
 function Field({ label, name, value, onChange, full=false, area=false }: {
   label: string; name: string; value: string
   onChange: (n: string, v: string) => void; full?: boolean; area?: boolean
@@ -86,17 +100,20 @@ function Field({ label, name, value, onChange, full=false, area=false }: {
 }
 
 export default function NewOfferTab({ lang }: Props) {
-  const [project, setProject] = useState<ProjectData>({ ...EMPTY, document_date: formatDateFi(new Date()) })
+  const _draft = loadDraft()
+  const [project, setProject] = useState<ProjectData>(_draft?.project ?? { ...EMPTY, document_date: formatDateFi(new Date()) })
   const [extracting, setExtracting] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [events, setEvents] = useState<ProgressEvent[]>([])
   const [sectionStats, setSectionStats] = useState<Record<string, { elapsed_s: number; tokens: number }>>({})
   const [totalElapsed, setTotalElapsed] = useState<number | null>(null)
   const [result, setResult] = useState<{ docx?: string; pdf?: string; xlsx?: string } | null>(null)
-  const [webSearch, setWebSearch] = useState(true)
-  const [exportPdf, setExportPdf] = useState(true)
-  const [costTable, setCostTable] = useState(true)
-  const [documentLanguage, setDocumentLanguage] = useState<'en' | 'fi'>('en')
+  const [webSearch, setWebSearch] = useState(_draft?.webSearch ?? true)
+  const [exportPdf, setExportPdf] = useState(_draft?.exportPdf ?? true)
+  const [costTable, setCostTable] = useState(_draft?.costTable ?? true)
+  const [documentLanguage, setDocumentLanguage] = useState<'en' | 'fi'>(_draft?.documentLanguage ?? 'en')
+  const [draftToast, setDraftToast] = useState<'restored' | 'saved' | null>(_draft ? 'restored' : null)
+  const draftToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [step, setStep] = useState<'upload' | 'form' | 'generating' | 'done'>('upload')
   const [selectedPath, setSelectedPath] = useState('')
   const [selectedName, setSelectedName] = useState('')
@@ -110,8 +127,28 @@ export default function NewOfferTab({ lang }: Props) {
   const testAbortControllerRef = useRef<AbortController | null>(null)
   const regenAbortRef = useRef<AbortController | null>(null)
   const [regeneratingKey, setRegeneratingKey] = useState<string | null>(null)
-  const [regenResults, setRegenResults] = useState<Record<string, { text: string; elapsed_s: number }>>({})
+  const [regenResults, setRegenResults] = useState<Record<string, { raw: any; elapsed_s: number }>>({})
   const [regenErrors, setRegenErrors] = useState<Record<string, string>>({})
+
+  // Auto-save draft whenever form fields or options change (skip during generation)
+  useEffect(() => {
+    if (generating) return
+    saveDraft({ project, webSearch, exportPdf, costTable, documentLanguage })
+    // Show 'saved' toast briefly; use 'restored' toast only on first render
+    if (draftToast !== 'restored') {
+      setDraftToast('saved')
+      if (draftToastTimer.current) clearTimeout(draftToastTimer.current)
+      draftToastTimer.current = setTimeout(() => setDraftToast(null), 2000)
+    } else {
+      // Dismiss the 'restored' toast after 3 s without restarting on further edits
+      if (!draftToastTimer.current) {
+        draftToastTimer.current = setTimeout(() => {
+          setDraftToast(null)
+          draftToastTimer.current = null
+        }, 3000)
+      }
+    }
+  }, [project, webSearch, exportPdf, costTable, documentLanguage]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (name: string, value: string) => setProject(p => ({ ...p, [name]: value }))
 
@@ -223,6 +260,8 @@ export default function NewOfferTab({ lang }: Props) {
               if (ev.status === 'done' && ev.docx) {
                 if (ev.elapsed_total_s != null) setTotalElapsed(ev.elapsed_total_s)
                 setResult({ docx: ev.docx, pdf: ev.pdf || undefined, xlsx: (ev as any).xlsx || undefined })
+                clearDraft()
+                setDraftToast(null)
                 setStep('done')
               }
             }
@@ -260,7 +299,14 @@ export default function NewOfferTab({ lang }: Props) {
       const resp = await fetch('/api/regenerate-section', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ section_key: sectionKey, project, enable_web_search: webSearch, document_language: documentLanguage }),
+        body: JSON.stringify({
+          section_key: sectionKey,
+          project,
+          enable_web_search: webSearch,
+          document_language: documentLanguage,
+          docx_path: result?.docx ?? null,
+          export_pdf: exportPdf,
+        }),
         signal: controller.signal,
       })
       const reader = resp.body!.getReader()
@@ -277,7 +323,16 @@ export default function NewOfferTab({ lang }: Props) {
           try {
             const ev = JSON.parse(line)
             if (ev.status === 'done') {
-              setRegenResults(prev => ({ ...prev, [sectionKey]: { text: extractRegenText(sectionKey, ev.result), elapsed_s: ev.elapsed_s } }))
+              setRegenResults(prev => ({ ...prev, [sectionKey]: { raw: ev.result, elapsed_s: ev.elapsed_s ?? 0 } }))
+              // Update download paths if rebuild was successful
+              if (ev.docx || ev.pdf || ev.xlsx) {
+                setResult(prev => prev ? {
+                  ...prev,
+                  ...(ev.docx && { docx: ev.docx }),
+                  ...(ev.pdf  && { pdf: ev.pdf }),
+                  ...(ev.xlsx && { xlsx: ev.xlsx }),
+                } : prev)
+              }
             } else if (ev.status === 'error') {
               setRegenErrors(prev => ({ ...prev, [sectionKey]: ev.message }))
             }
@@ -421,6 +476,19 @@ export default function NewOfferTab({ lang }: Props) {
       {/* Step 2: Form */}
       {(step === 'form' || step === 'upload') && step !== 'upload' && (
         <>
+          {draftToast && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: draftToast === 'restored' ? '#eff6ff' : '#f0fdf4', border: `1px solid ${draftToast === 'restored' ? '#bfdbfe' : '#bbf7d0'}`, borderRadius: 6, padding: '8px 14px', marginBottom: 8, fontSize: 13, color: draftToast === 'restored' ? '#1d4ed8' : '#15803d' }}>
+              <span>{draftToast === 'restored' ? `💾 ${t('draft_restored', lang)}` : `✓ ${t('draft_saved', lang)}`}</span>
+              {draftToast === 'restored' && (
+                <button
+                  onClick={() => { clearDraft(); setProject({ ...EMPTY, document_date: formatDateFi(new Date()) }); setDraftToast(null) }}
+                  style={{ background: 'none', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: '#1d4ed8', padding: '1px 8px', marginLeft: 12 }}
+                >
+                  {t('draft_clear', lang)}
+                </button>
+              )}
+            </div>
+          )}
           <div className="card">
             <h2>{t('step2_title', lang)}</h2>
             <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
@@ -704,9 +772,90 @@ export default function NewOfferTab({ lang }: Props) {
                             {t('regen_dismiss', lang)}
                           </button>
                         </div>
-                        {regenResult && (
-                          <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', color: '#374151' }}>{regenResult.text}</pre>
-                        )}
+                        {regenResult && sectionKey === 'section2' && (() => {
+                          const sec2 = regenResult.raw?.section2 ?? {}
+                          return (
+                            <>
+                              {sec2.description_text && (
+                                <div style={{ marginBottom: 8 }}>
+                                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Description</div>
+                                  <div style={{ whiteSpace: 'pre-wrap', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, padding: 8 }}>{sec2.description_text}</div>
+                                </div>
+                              )}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                <span style={{ fontWeight: 600 }}>{t('test_steps', lang)}</span>
+                                {sec2.xlsx && (
+                                  <button className="btn btn-secondary" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => download(sec2.xlsx)}>
+                                    {t('download_xlsx', lang)}
+                                  </button>
+                                )}
+                              </div>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                <thead>
+                                  <tr style={{ background: '#f1f5f9' }}>
+                                    <th style={{ textAlign: 'left', padding: '4px 8px' }}>Step</th>
+                                    <th style={{ textAlign: 'right', padding: '4px 8px' }}>Hourly cost [€/h]</th>
+                                    <th style={{ textAlign: 'right', padding: '4px 8px' }}>Hours estimation [h]</th>
+                                    <th style={{ textAlign: 'right', padding: '4px 8px' }}>Cost estimation [€]</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(sec2.steps || []).map((s: any, i: number) => {
+                                    const stepNum = s.step_id?.split(' ').pop() ?? (i + 1)
+                                    return [
+                                      <tr key={`main-${i}`} style={{ borderBottom: '1px solid #e5e7eb', background: '#f8fafc' }}>
+                                        <td style={{ padding: '5px 8px', fontWeight: 700 }}>{s.step_id}: {s.name}</td>
+                                        <td style={{ padding: '5px 8px' }} />
+                                        <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{s.total_hours?.toFixed(1)}</td>
+                                        <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{fmtEur(s.total_cost ?? 0)}</td>
+                                      </tr>,
+                                      ...(s.sub_steps || []).map((ss: any, j: number) => (
+                                        <tr key={`sub-${i}-${j}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                          <td style={{ padding: '3px 8px 3px 20px', color: '#374151' }}>{stepNum}.{j + 1} &nbsp;{ss.name}</td>
+                                          <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{Math.round(ss.hourly_rate ?? 0)}</td>
+                                          <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{((ss.hours ?? 0) * (ss.persons ?? 1)).toFixed(1)}</td>
+                                          <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{ss.total?.toFixed(2)}€</td>
+                                        </tr>
+                                      )),
+                                    ]
+                                  })}
+                                </tbody>
+                                <tfoot>
+                                  <tr style={{ borderTop: '2px solid #e5e7eb', background: '#f1f5f9' }}>
+                                    <td style={{ padding: '5px 8px', fontWeight: 700 }}>{t('test_total', lang)}</td>
+                                    <td />
+                                    <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>
+                                      {(sec2.steps || []).reduce((sum: number, s: any) => sum + (s.total_hours ?? 0), 0).toFixed(1)} h
+                                    </td>
+                                    <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>
+                                      {fmtEur(sec2.grand_total ?? 0)}
+                                    </td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </>
+                          )
+                        })()}
+                        {regenResult && sectionKey === 'section1' && (() => {
+                          const sec1 = regenResult.raw?.section1 ?? {}
+                          return (
+                            <>
+                              <div style={{ marginBottom: 8 }}>
+                                <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('test_company_bg', lang)}</div>
+                                <div style={{ whiteSpace: 'pre-wrap', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, padding: 8 }}>{sec1.company_background || '—'}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('test_goals', lang)}</div>
+                                <div style={{ whiteSpace: 'pre-wrap', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, padding: 8 }}>{sec1.goals_text || '—'}</div>
+                              </div>
+                            </>
+                          )
+                        })()}
+                        {regenResult && sectionKey !== 'section1' && sectionKey !== 'section2' && (() => {
+                          const val = regenResult.raw ? regenResult.raw[Object.keys(regenResult.raw)[0]] : ''
+                          const text = typeof val === 'string' ? val : JSON.stringify(val, null, 2)
+                          return <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', color: '#374151' }}>{text}</pre>
+                        })()}
                       </div>
                     </li>
                   )}
