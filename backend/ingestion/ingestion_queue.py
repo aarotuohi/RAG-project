@@ -18,8 +18,8 @@ Usage
     # Poll from the frontend:
     job = get_job(job_id)   # returns IngestionJob | None
 """
-from __future__ import annotations
 
+from __future__ import annotations
 import logging
 import queue
 import threading

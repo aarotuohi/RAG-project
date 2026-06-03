@@ -21,24 +21,10 @@ from backend.chains.boilerplate import (
 from backend.generator.docx_builder import build_offer_document
 from backend.generator.pdf_converter import convert_to_pdf
 from backend.generator.excel_builder import build_cost_excel
-from backend.ingestion.contact_parser import parse_contact_file, lookup
+from backend.ingestion.contact_parser import parse_contact_file
 from backend.config import CONTACTS_DIR
 
 logger = logging.getLogger(__name__)
-
-
-def _load_salesperson(salesperson_name: str) -> dict | None:
-    """Load salesperson contact details from the first file found in CONTACTS_DIR."""
-    for f in CONTACTS_DIR.iterdir():
-        if f.suffix.lower() in (".xlsx", ".xls", ".docx", ".pdf"):
-            try:
-                records = parse_contact_file(f)
-                match = lookup(records, salesperson_name)
-                if match:
-                    return match
-            except Exception:
-                continue
-    return None
 
 
 def _load_all_contacts() -> list[dict]:
@@ -153,19 +139,13 @@ async def generate_offer(
         _current_section = "section10"
         yield {"status": "progress", "section": "section10", "message": "Generating Section 10: Contact Information…"}
         _t0 = time.time()
-        salesperson_contact = _load_salesperson(project.salesperson_name)
-        # Populate salesperson fields into ProjectData so all chains can access them
-        if salesperson_contact:
-            project.salesperson_phone = salesperson_contact.get("phone", "")
-            project.salesperson_email = salesperson_contact.get("email", "")
-            project.salesperson_title = salesperson_contact.get("title", "")
-        sections["section10_text"] = generate_contact_text(project, language=language, salesperson_contact=salesperson_contact)
+        sections["section10_text"] = generate_contact_text(project, language=language)
         yield {"status": "stats", "section": "section10", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section10_text"])}
 
         _current_section = "docx"
         yield {"status": "progress", "section": "docx", "message": "Assembling DOCX document…"}
         _t0 = time.time()
-        docx_path = await asyncio.to_thread(build_offer_document, project, sections, salesperson_contact, language=language)
+        docx_path = await asyncio.to_thread(build_offer_document, project, sections, language=language)
         yield {"status": "stats", "section": "docx", "elapsed_s": round(time.time() - _t0, 1), "tokens": 0}
 
         xlsx_path = None
@@ -214,29 +194,31 @@ def regenerate_section(
     project: ProjectData,
     section_key: str,
     enable_web_search: bool = True,
+    language: str = "en",
 ) -> dict:
     """Re-run a single section chain and return the result."""
-    if section_key == "thankyou":
-        return {"thankyou": generate_thankyou(project)}
+    if section_key == "thank_you":
+        return {"thank_you": generate_thankyou(project, language=language)}
     elif section_key == "section1":
-        return {"section1": generate_section1(project, enable_web_search)}
+        return {"section1": generate_section1(project, enable_web_search, language=language)}
     elif section_key == "section2":
-        return {"section2": generate_section2(project)}
+        return {"section2": generate_section2(project, language=language)}
     elif section_key == "section3":
-        return {"section3": generate_timetable(project)}
+        return {"section3": generate_timetable(project, language=language)}
     elif section_key == "section4":
-        return {"section4": generate_restrictions(project)}
+        return {"section4": generate_restrictions(project, language=language)}
     elif section_key == "section5":
-        return {"section5": generate_material(project)}
+        return {"section5": generate_material(project, language=language)}
     elif section_key == "section6":
-        return {"section6": read_boilerplate("documentation")}
+        return {"section6": read_boilerplate("documentation", language=language)}
     elif section_key == "section7":
-        return {"section7": read_boilerplate("quality")}
+        return {"section7": read_boilerplate("quality", language=language)}
     elif section_key == "section8":
-        return {"section8": generate_section8(project)}
+        team_contacts = _load_all_contacts()
+        return {"section8": generate_section8(project, language=language, contacts=team_contacts or None)}
     elif section_key == "section9":
-        return {"section9": read_boilerplate("delivery")}
+        return {"section9": read_boilerplate("delivery", language=language)}
     elif section_key == "section10":
-        return {"section10_text": generate_contact_text(project)}
+        return {"section10_text": generate_contact_text(project, language=language)}
     else:
         raise ValueError(f"Unknown section key: {section_key}")

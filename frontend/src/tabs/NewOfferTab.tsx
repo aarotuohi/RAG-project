@@ -1,5 +1,26 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, Fragment } from 'react'
 import { t, type Lang } from '../i18n'
+
+const REGENERATABLE_SECTIONS = new Set([
+  'thank_you', 'section1', 'section2', 'section3', 'section4', 'section5', 'section8',
+])
+
+function extractRegenText(sectionKey: string, content: any): string {
+  if (!content) return ''
+  const val = content[Object.keys(content)[0]]
+  if (typeof val === 'string') return val
+  if (sectionKey === 'section1') {
+    return [val?.company_background, val?.goals_text].filter(Boolean).join('\n\n')
+  }
+  if (sectionKey === 'section2') {
+    return `${val?.description_text ?? ''}\n\nGrand total: ${val?.grand_total ?? 0}\u20ac`
+  }
+  if (sectionKey === 'section8') {
+    const experts = (val?.experts ?? []).map((e: any) => `${e.name} (${e.title}) \u2014 ${e.role}`).join('\n')
+    return `${val?.intro_text ?? ''}\n${experts}`
+  }
+  return JSON.stringify(val, null, 2)
+}
 
 interface Props {
   lang: Lang
@@ -87,6 +108,10 @@ export default function NewOfferTab({ lang }: Props) {
   const [testError, setTestError] = useState('')
   const abortControllerRef = useRef<AbortController | null>(null)
   const testAbortControllerRef = useRef<AbortController | null>(null)
+  const regenAbortRef = useRef<AbortController | null>(null)
+  const [regeneratingKey, setRegeneratingKey] = useState<string | null>(null)
+  const [regenResults, setRegenResults] = useState<Record<string, { text: string; elapsed_s: number }>>({})
+  const [regenErrors, setRegenErrors] = useState<Record<string, string>>({})
 
   const set = (name: string, value: string) => setProject(p => ({ ...p, [name]: value }))
 
@@ -223,6 +248,48 @@ export default function NewOfferTab({ lang }: Props) {
 
   const download = (path: string) => {
     window.open(`/api/download?path=${encodeURIComponent(path)}`, '_blank')
+  }
+
+  const regenSection = async (sectionKey: string) => {
+    const controller = new AbortController()
+    regenAbortRef.current = controller
+    setRegeneratingKey(sectionKey)
+    setRegenErrors(prev => { const n = { ...prev }; delete n[sectionKey]; return n })
+    setRegenResults(prev => { const n = { ...prev }; delete n[sectionKey]; return n })
+    try {
+      const resp = await fetch('/api/regenerate-section', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section_key: sectionKey, project, enable_web_search: webSearch, document_language: documentLanguage }),
+        signal: controller.signal,
+      })
+      const reader = resp.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const ev = JSON.parse(line)
+            if (ev.status === 'done') {
+              setRegenResults(prev => ({ ...prev, [sectionKey]: { text: extractRegenText(sectionKey, ev.result), elapsed_s: ev.elapsed_s } }))
+            } else if (ev.status === 'error') {
+              setRegenErrors(prev => ({ ...prev, [sectionKey]: ev.message }))
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') setRegenErrors(prev => ({ ...prev, [sectionKey]: t('regen_error', lang) }))
+    } finally {
+      regenAbortRef.current = null
+      setRegeneratingKey(null)
+    }
   }
 
   const cancelSectionTest = () => {
@@ -587,25 +654,63 @@ export default function NewOfferTab({ lang }: Props) {
                 : ev.status === 'error' ? 'error' : 'warning'
                 : 'pending'
               const stats = sectionStats[sectionKey]
+              const canRegen = step === 'done' && REGENERATABLE_SECTIONS.has(sectionKey)
+              const isRegening = regeneratingKey === sectionKey
+              const regenResult = regenResults[sectionKey]
+              const regenError = regenErrors[sectionKey]
               return (
-                <li key={sectionKey} className="progress-item">
-                  <span className={`progress-dot ${dotClass}`} />
-                  <span>{SECTION_LABELS[sectionKey] || sectionKey}</span>
-                  {stats && (
-                    <span style={{ display: 'inline-flex', gap: 6, marginLeft: 10 }}>
-                      <span style={{ fontSize: 11, color: '#6b7280', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 4, padding: '1px 6px' }}>
-                        ⏱ {stats.elapsed_s}s
-                      </span>
-                      {stats.tokens > 0 && (
+                <Fragment key={sectionKey}>
+                  <li className="progress-item" style={{ display: 'flex', alignItems: 'center' }}>
+                    <span className={`progress-dot ${dotClass}`} />
+                    <span>{SECTION_LABELS[sectionKey] || sectionKey}</span>
+                    {stats && (
+                      <span style={{ display: 'inline-flex', gap: 6, marginLeft: 10 }}>
                         <span style={{ fontSize: 11, color: '#6b7280', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 4, padding: '1px 6px' }}>
-                          ~{stats.tokens} tok
+                          ⏱ {stats.elapsed_s}s
                         </span>
-                      )}
-                    </span>
+                        {stats.tokens > 0 && (
+                          <span style={{ fontSize: 11, color: '#6b7280', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 4, padding: '1px 6px' }}>
+                            ~{stats.tokens} tok
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {ev && ev.status === 'warning' && <span style={{ fontSize: 12, color: '#c27803', marginLeft: 8 }}>⚠️ {ev.message}</span>}
+                    {ev && ev.status === 'error' && <span style={{ fontSize: 12, color: '#dc2626', marginLeft: 8 }}>✕ {ev.message}</span>}
+                    {canRegen && (
+                      <button
+                        title="Regenerate this section"
+                        onClick={() => isRegening ? (regenAbortRef.current?.abort(), setRegeneratingKey(null)) : regenSection(sectionKey)}
+                        disabled={regeneratingKey !== null && !isRegening}
+                        style={{ marginLeft: 'auto', fontSize: 13, background: 'none', border: '1px solid #d1d5db', borderRadius: 4, padding: '1px 6px', cursor: 'pointer', color: isRegening ? '#c27803' : '#6b7280' }}
+                      >
+                        {isRegening ? t('regen_section_running', lang) : t('regen_section_btn', lang)}
+                      </button>
+                    )}
+                  </li>
+                  {(regenResult || regenError) && (
+                    <li style={{ listStyle: 'none', paddingLeft: 24, paddingBottom: 8 }}>
+                      <div style={{ background: regenError ? '#fef2f2' : '#f8fafc', border: `1px solid ${regenError ? '#fecaca' : '#e2e8f0'}`, borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          {regenResult && <span style={{ color: '#6b7280' }}>⏱ {regenResult.elapsed_s}s</span>}
+                          {regenError && <span style={{ color: '#dc2626' }}>{regenError}</span>}
+                          <button
+                            onClick={() => {
+                              setRegenResults(prev => { const n = { ...prev }; delete n[sectionKey]; return n })
+                              setRegenErrors(prev => { const n = { ...prev }; delete n[sectionKey]; return n })
+                            }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 13, padding: '0 2px' }}
+                          >
+                            {t('regen_dismiss', lang)}
+                          </button>
+                        </div>
+                        {regenResult && (
+                          <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', color: '#374151' }}>{regenResult.text}</pre>
+                        )}
+                      </div>
+                    </li>
                   )}
-                  {ev && ev.status === 'warning' && <span style={{ fontSize: 12, color: '#c27803', marginLeft: 8 }}>⚠️ {ev.message}</span>}
-                  {ev && ev.status === 'error' && <span style={{ fontSize: 12, color: '#dc2626', marginLeft: 8 }}>✕ {ev.message}</span>}
-                </li>
+                </Fragment>
               )
             })}
           </ul>

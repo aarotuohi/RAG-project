@@ -98,7 +98,7 @@ _THANKYOU_PROMPT = PromptTemplate.from_template(
 Thank the company for the meeting and express enthusiasm about the potential collaboration.
 
 Customer company: {company_name}
-Customer name: {first_name} {last_name}
+Customer name: {customer_name}
 Project: {project_name}
 
 Thank-you paragraph:"""
@@ -110,7 +110,7 @@ Kiitä yritystä tapaamisesta ja ilmaise innostusta mahdollisesta yhteistyöstä
 Kirjoita koko vastaus suomeksi.
 
 Asiakasyritys: {company_name}
-Asiakkaan nimi: {first_name} {last_name}
+Asiakkaan nimi: {customer_name}
 Projekti: {project_name}
 
 Kiitoskappale:"""
@@ -199,15 +199,13 @@ def generate_thankyou(project: ProjectData, language: str = "en") -> str:
     if language == "fi":
         prompt = _THANKYOU_PROMPT_FI.format(
             company_name=project.company_name or "yrityksenne",
-            first_name=project.first_name or "",
-            last_name=project.last_name or "",
+            customer_name=project.customer_name or "",
             project_name=project.project_name or "projekti",
         )
     else:
         prompt = _THANKYOU_PROMPT.format(
             company_name=project.company_name or "your company",
-            first_name=project.first_name or "",
-            last_name=project.last_name or "",
+            customer_name=project.customer_name or "",
             project_name=project.project_name or "the project",
         ) + "\n\nWrite the entire response in English."
     return llm.invoke(prompt).strip()

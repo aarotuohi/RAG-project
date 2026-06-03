@@ -12,7 +12,7 @@ from pydantic import BaseModel
 import json
 
 from backend.chains.extraction_chain import extract_from_file, ProjectData, project_data_to_dict
-from backend.generator.offer_generator import generate_offer
+from backend.generator.offer_generator import generate_offer, regenerate_section
 from backend.vectorstore.chroma_client import collection_count
 from backend.ollama_client import recommend_model, list_local_models, is_ollama_running
 # -- Claude alternative: replace the import above with:
@@ -156,6 +156,56 @@ async def generate(req: GenerateRequest):
             # Pad to >1KB so TCP/proxy buffers flush immediately on every event
             line = json.dumps(event) + "\n"
             yield line + (" " * max(0, 1024 - len(line))) + "\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+# ── Section Regeneration ─────────────────────────────────────────────────────
+
+_REGENERATABLE_SECTIONS = {
+    "thank_you", "section1", "section2", "section3",
+    "section4", "section5", "section8",
+}
+
+
+class RegenerateSectionRequest(BaseModel):
+    section_key: str
+    project: dict
+    enable_web_search: bool = True
+    document_language: str = "en"
+
+
+@router.post("/regenerate-section")
+async def regenerate_section_endpoint(req: RegenerateSectionRequest):
+    """Re-run a single section and stream the result as NDJSON."""
+    if req.section_key not in _REGENERATABLE_SECTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Section '{req.section_key}' cannot be regenerated. Valid: {sorted(_REGENERATABLE_SECTIONS)}",
+        )
+
+    project = ProjectData(**{k: v for k, v in req.project.items() if k in ProjectData.__dataclass_fields__})
+
+    async def event_stream():
+        import time
+        progress_line = json.dumps({"status": "progress", "section": req.section_key, "message": f"Regenerating {req.section_key}\u2026"}) + "\n"
+        yield progress_line + (" " * max(0, 1024 - len(progress_line))) + "\n"
+        t0 = time.time()
+        try:
+            result = await asyncio.to_thread(
+                regenerate_section, project, req.section_key,
+                req.enable_web_search, req.document_language,
+            )
+            elapsed = round(time.time() - t0, 1)
+            done_line = json.dumps({"status": "done", "section": req.section_key, "result": result, "elapsed_s": elapsed}) + "\n"
+            yield done_line + (" " * max(0, 1024 - len(done_line))) + "\n"
+        except Exception as e:
+            error_line = json.dumps({"status": "error", "section": req.section_key, "message": str(e)}) + "\n"
+            yield error_line + (" " * max(0, 1024 - len(error_line))) + "\n"
 
     return StreamingResponse(
         event_stream(),

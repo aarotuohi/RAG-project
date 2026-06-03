@@ -85,6 +85,12 @@ const translations = {
     sec_docx: 'Assembling DOCX',
     sec_pdf: 'Converting to PDF',
 
+    // Section regeneration
+    regen_section_btn: '🔄',
+    regen_section_running: '⏳',
+    regen_dismiss: '✕',
+    regen_error: 'Regeneration failed',
+
     // OutputsTab
     generated_offers: 'Generated Offers',
     refresh_btn: '🔄 Refresh',
@@ -181,6 +187,12 @@ const translations = {
     sec_section10: '10. Yhteystiedot',
     sec_docx: 'DOCX-kokoaminen',
     sec_pdf: 'PDF-muunnos',
+
+    // Section regeneration
+    regen_section_btn: '🔄',
+    regen_section_running: '⏳',
+    regen_dismiss: '✕',
+    regen_error: 'Uudelleenluonti epäonnistui',
 
     // OutputsTab
     generated_offers: 'Luodut tarjoukset',

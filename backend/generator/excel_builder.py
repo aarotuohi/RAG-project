@@ -16,6 +16,7 @@ from datetime import datetime
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 
 from backend.config import OUTPUTS_DIR
 from backend.chains.extraction_chain import ProjectData
@@ -91,6 +92,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "summary_col_h":    "Tuntiarvio [h]",
         "summary_col_e":    "Hinta-arvio [€]",
         "summary_col_fp":   "Kiinteä hinta [€]",
+        "tax_select_label": "Sisällytä ALV 25,5%",
+        "tax_no":           "Ei",
+        "tax_yes":          "Kyllä",
+        "tax_amount_label": "ALV (25,5%)",
+        "tax_total_label":  "Hinta yhteensä (sis. ALV)",
     },
     "en": {
         "sheet_title":      "Calculation",
@@ -112,6 +118,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "summary_col_h":    "Hours estimate [h]",
         "summary_col_e":    "Price estimate [€]",
         "summary_col_fp":   "Fixed price [€]",
+        "tax_select_label": "Include VAT 25.5%",
+        "tax_no":           "No",
+        "tax_yes":          "Yes",
+        "tax_amount_label": "VAT (25.5%)",
+        "tax_total_label":  "Total price (incl. VAT)",
     },
 }
 
@@ -153,7 +164,7 @@ def build_cost_excel(project: ProjectData, section2: dict,
         (t["customer"],    _customer_label(project)),
         (t["sales_resp"],  project.salesperson_name or ""),
         (t["date"],        _date_fi),
-        (t["description"], project.goals or ""),
+        (t["description"], section2.get("short_description") or project.goals or ""),
         (t["personnel"],   project.required_expertise or ""),
     ]
     for i, (label, value) in enumerate(meta_rows, start=1):
@@ -273,6 +284,7 @@ def build_cost_excel(project: ProjectData, section2: dict,
         current_row += 1
 
     # Grand total row — SUM over all summary rows
+    grand_total_row = current_row
     if summary_rows:
         if not is_fixed:
             _set_cell(ws, current_row, 4,
@@ -291,9 +303,46 @@ def build_cost_excel(project: ProjectData, section2: dict,
         _set_cell(ws, current_row, 5, 0,
                   bold=True, fill=_SUMMARY_FILL,
                   number_format='#,##0.00', align="right")
+    current_row += 1
+
+    # ── VAT / Tax section ─────────────────────────────────────────────────────
+    current_row += 1  # blank separator row
+
+    # Tax-selection row: label in B, dropdown in C
+    tax_select_row = current_row
+    _set_cell(ws, current_row, 2, t["tax_select_label"], bold=True)
+    tax_cell = ws.cell(row=current_row, column=3, value=t["tax_no"])
+    tax_cell.font = Font(bold=True)
+    tax_cell.alignment = Alignment(horizontal="center", vertical="top")
+    # Dropdown: "Ei" / "Kyllä"  (or "No" / "Yes" in English)
+    dv = DataValidation(
+        type="list",
+        formula1=f'"{t["tax_no"]},{t["tax_yes"]}"',
+        allow_blank=False,
+        showDropDown=False,  # False = show the arrow button in Excel
+    )
+    ws.add_data_validation(dv)
+    dv.add(tax_cell)
+    current_row += 1
+
+    # VAT amount row
+    vat_amount_row = current_row
+    _set_cell(ws, current_row, 2, t["tax_amount_label"])
+    _set_cell(ws, current_row, 5,
+              f'=IF(C{tax_select_row}="{t["tax_yes"]}",E{grand_total_row}*0.255,0)',
+              number_format='#,##0.00', align="right")
+    current_row += 1
+
+    # Final total row (net + VAT)
+    _TAX_TOTAL_FILL = PatternFill("solid", fgColor="D6E4BC")   # light green — tax total
+    _set_cell(ws, current_row, 2, t["tax_total_label"], bold=True, fill=_TAX_TOTAL_FILL)
+    _set_cell(ws, current_row, 5,
+              f"=E{grand_total_row}+E{vat_amount_row}",
+              bold=True, fill=_TAX_TOTAL_FILL,
+              number_format='#,##0.00', align="right")
+    current_row += 1
 
     
-    # These settings ensure "Save As PDF" in Excel produces the same layout.
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.fitToPage = True

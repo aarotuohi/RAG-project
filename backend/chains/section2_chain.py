@@ -176,6 +176,28 @@ Materiaalitoimitukset: {material_deliverables}
 Toteutuskappale:"""
 )
 
+_SHORT_DESC_PROMPT = PromptTemplate.from_template(
+    """Write a single compact sentence (max 20 words) summarising what this project delivers.
+No preamble, no full stop at the end.
+
+Project name: {project_name}
+Goals: {goals}
+Deliverables: {material_deliverables}
+
+Summary:"""
+)
+
+_SHORT_DESC_PROMPT_FI = PromptTemplate.from_template(
+    """Kirjoita yksi tiivis lause (enintään 20 sanaa), joka kuvaa mitä tämä projekti tuottaa.
+Ei johdantoa, ei pistettä lauseen lopussa.
+
+Projektin nimi: {project_name}
+Tavoitteet: {goals}
+Toimitukset: {material_deliverables}
+
+Tiivistelmä:"""
+)
+
 
 def _historical_rates(historical_data: str) -> dict[str, float]:
   
@@ -350,6 +372,15 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
         desc_prompt += f"\n\n{lang_note}"
     description_text = llm.invoke(desc_prompt).strip()
 
+    # --- Short description (single sentence for Excel header) ---
+    short_desc_template = _SHORT_DESC_PROMPT_FI if is_fi else _SHORT_DESC_PROMPT
+    short_desc_kwargs = dict(
+        project_name=project.project_name or ("Uusi projekti" if is_fi else "New Project"),
+        goals=project.goals or ("Ei määritelty" if is_fi else "Not specified"),
+        material_deliverables=project.material_deliverables or ("Ei määritelty" if is_fi else "Not specified"),
+    )
+    short_description = llm.invoke(short_desc_template.format(**short_desc_kwargs)).strip()
+
     # Derive hourly rates exclusively from historical data.
     # CATEGORY_RATES is used only when the cost_history collection is empty.
     fallback_rates = _historical_rates(historical_data)
@@ -437,6 +468,7 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
 
     return {
         "description_text": description_text,
+        "short_description": short_description,
         "steps": step_groups,
         "grand_total": grand_total,
         "payment_type": project.payment_type or "hourly",
