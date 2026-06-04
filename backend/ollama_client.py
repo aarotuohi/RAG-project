@@ -10,7 +10,7 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_anthropic import ChatAnthropic
 from langchain_core.output_parsers import StrOutputParser
 
-from backend.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, ANTHROPIC_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_MAX_TOKENS, ANTHROPIC_MAX_TOKENS
+from backend.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, ANTHROPIC_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_MAX_TOKENS
 
 
 def _get_available_ram_gb() -> float:
@@ -75,6 +75,54 @@ def pull_model_if_missing(model_name: str):
 
 _llm = None
 _embeddings: OllamaEmbeddings | None = None
+
+# ── Anthropic connectivity probe ──────────────────────────────────────────────
+
+_anthropic_probe_cache: tuple[float, bool, str] | None = None  # (timestamp, ok, detail)
+_ANTHROPIC_PROBE_TTL = 60.0  # seconds
+
+
+def is_anthropic_reachable() -> tuple[bool, str]:
+    """
+    Lightweight probe that validates the Anthropic API key and network reachability
+    using the zero-cost `count_tokens` endpoint (no tokens are generated).
+    Result is cached for 60 s so repeated /api/status polls are cheap.
+    Returns (ok: bool, detail: str).
+    """
+    global _anthropic_probe_cache
+
+    if not ANTHROPIC_API_KEY:
+        return False, "ANTHROPIC_API_KEY is not set"
+
+    # Return cached result if still fresh
+    if _anthropic_probe_cache is not None:
+        ts, ok, detail = _anthropic_probe_cache
+        if time.monotonic() - ts < _ANTHROPIC_PROBE_TTL:
+            return ok, detail
+
+    try:
+        import anthropic  # soft import — only needed here
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        client.messages.count_tokens(
+            model=ANTHROPIC_MODEL,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        result = (True, "ok")
+    except Exception as exc:
+        msg = str(exc)
+        # Surface the most useful part of common errors without leaking the key
+        if "401" in msg or "authentication" in msg.lower() or "invalid" in msg.lower():
+            detail = "invalid API key (401)"
+        elif "403" in msg:
+            detail = "forbidden (403) — check org/project permissions"
+        elif "Connection" in msg or "connect" in msg.lower():
+            detail = "network unreachable"
+        else:
+            detail = msg[:120]  # truncate, never expose full traceback
+        result = (False, detail)
+
+    _anthropic_probe_cache = (time.monotonic(), *result)
+    return result
 
 
 def get_llm(**kwargs):

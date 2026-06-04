@@ -159,33 +159,54 @@ async def generate_offer(
 
         _current_section = "section3"
         yield {"status": "progress", "section": "section3", "message": "Generating Section 3: Timetable…"}
-        _t0 = time.time()
-        sections["section3"] = await asyncio.to_thread(generate_timetable, project, language=language)
-        yield {"status": "stats", "section": "section3", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section3"])}
-
-        _current_section = "section4"
         yield {"status": "progress", "section": "section4", "message": "Generating Section 4: Restrictions…"}
-        _t0 = time.time()
-        sections["section4"] = await asyncio.to_thread(generate_restrictions, project, language=language)
-        yield {"status": "stats", "section": "section4", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section4"])}
-
-        _current_section = "section5"
         yield {"status": "progress", "section": "section5", "message": "Generating Section 5: Material Transformation…"}
         _t0 = time.time()
-        sections["section5"] = await asyncio.to_thread(generate_material, project, language=language)
-        yield {"status": "stats", "section": "section5", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section5"])}
+        _sec3, _sec4, _sec5 = await asyncio.gather(
+            asyncio.to_thread(generate_timetable,   project, language=language),
+            asyncio.to_thread(generate_restrictions, project, language=language),
+            asyncio.to_thread(generate_material,    project, language=language),
+        )
+        _elapsed_345 = round(time.time() - _t0, 1)
+        sections["section3"] = _sec3
+        sections["section4"] = _sec4
+        sections["section5"] = _sec5
+        yield {"status": "stats", "section": "section3", "elapsed_s": _elapsed_345, "tokens": _estimate_tokens(_sec3)}
+        yield {"status": "stats", "section": "section4", "elapsed_s": _elapsed_345, "tokens": _estimate_tokens(_sec4)}
+        yield {"status": "stats", "section": "section5", "elapsed_s": _elapsed_345, "tokens": _estimate_tokens(_sec5)}
 
+        # Sections 6, 7, 9, 10 are boilerplate reads or trivial text — run together
         _current_section = "section6"
         yield {"status": "progress", "section": "section6", "message": "Loading Section 6: Documentation (boilerplate)…"}
-        _t0 = time.time()
-        sections["section6"] = read_boilerplate("documentation", language=language)
-        yield {"status": "stats", "section": "section6", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section6"])}
-
-        _current_section = "section7"
         yield {"status": "progress", "section": "section7", "message": "Loading Section 7: Quality Assurance (SKOL)…"}
+        yield {"status": "progress", "section": "section9", "message": "Loading Section 9: Delivery Terms (boilerplate)…"}
+        yield {"status": "progress", "section": "section10", "message": "Generating Section 10: Contact Information…"}
         _t0 = time.time()
-        sections["section7"] = read_boilerplate("quality", language=language)
-        yield {"status": "stats", "section": "section7", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section7"])}
+        (
+            _sec6, _sec7,
+            (_sec9, _sec9_pay),
+            _sec10,
+        ) = await asyncio.gather(
+            asyncio.to_thread(read_boilerplate, "documentation", language=language),
+            asyncio.to_thread(read_boilerplate, "quality",       language=language),
+            asyncio.to_thread(
+                lambda: (
+                    read_boilerplate("delivery", language=language),
+                    read_boilerplate_dated("payment", project.document_date, language=language),
+                )
+            ),
+            asyncio.to_thread(generate_contact_text, project, language=language),
+        )
+        _elapsed_boiler = round(time.time() - _t0, 1)
+        sections["section6"]      = _sec6
+        sections["section7"]      = _sec7
+        sections["section9"]      = _sec9
+        sections["section9_payment"] = _sec9_pay
+        sections["section10_text"] = _sec10
+        yield {"status": "stats", "section": "section6",  "elapsed_s": _elapsed_boiler, "tokens": _estimate_tokens(_sec6)}
+        yield {"status": "stats", "section": "section7",  "elapsed_s": _elapsed_boiler, "tokens": _estimate_tokens(_sec7)}
+        yield {"status": "stats", "section": "section9",  "elapsed_s": _elapsed_boiler, "tokens": _estimate_tokens(_sec9)}
+        yield {"status": "stats", "section": "section10", "elapsed_s": _elapsed_boiler, "tokens": _estimate_tokens(_sec10)}
 
         _current_section = "section8"
         yield {"status": "progress", "section": "section8", "message": "Generating Section 8: Project Team…"}
@@ -195,19 +216,6 @@ async def generate_offer(
             generate_section8, project, language=language, contacts=team_contacts or None
         )
         yield {"status": "stats", "section": "section8", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section8"])}
-
-        _current_section = "section9"
-        yield {"status": "progress", "section": "section9", "message": "Loading Section 9: Delivery Terms (boilerplate)…"}
-        _t0 = time.time()
-        sections["section9"] = read_boilerplate("delivery", language=language)
-        sections["section9_payment"] = read_boilerplate_dated("payment", project.document_date, language=language)
-        yield {"status": "stats", "section": "section9", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section9"])}
-
-        _current_section = "section10"
-        yield {"status": "progress", "section": "section10", "message": "Generating Section 10: Contact Information…"}
-        _t0 = time.time()
-        sections["section10_text"] = generate_contact_text(project, language=language)
-        yield {"status": "stats", "section": "section10", "elapsed_s": round(time.time() - _t0, 1), "tokens": _estimate_tokens(sections["section10_text"])}
 
         _current_section = "docx"
         yield {"status": "progress", "section": "docx", "message": "Assembling DOCX document…"}
