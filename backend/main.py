@@ -42,13 +42,28 @@ async def lifespan(app: FastAPI):
     yield  # app is running
 
 
+# Allowed CORS origins.  Override via CORS_ORIGINS env var (comma-separated).
+# Defaults to localhost on the ports used by Vite dev server and the FastAPI server.
+_DEFAULT_ORIGINS = [
+    "http://localhost:5173",   # Vite dev server (npm run dev)
+    "http://localhost:8000",   # FastAPI itself (when accessed via browser)
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8000",
+]
+_cors_origins_env = os.environ.get("CORS_ORIGINS", "")
+ALLOWED_ORIGINS: list[str] = (
+    [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    if _cors_origins_env
+    else _DEFAULT_ORIGINS
+)
+
 app = FastAPI(title="AISALES", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 app.include_router(router)
