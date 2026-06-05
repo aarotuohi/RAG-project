@@ -1,10 +1,22 @@
 import { useState, useEffect } from 'react'
 import { t, type Lang } from '../i18n'
 
+interface OfferMeta {
+  customer_name?: string
+  company_name?: string
+  project_name?: string
+  document_language?: string
+  generated_at?: string    // ISO-8601
+  elapsed_total_s?: number
+  section_stats?: Record<string, { elapsed_s: number; tokens: number }>
+  files?: { docx?: string; pdf?: string; xlsx?: string }
+}
+
 interface OutputFile {
   name: string
   path: string
   size: number
+  meta?: OfferMeta
 }
 
 interface Props {
@@ -16,6 +28,24 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function formatDate(iso: string | undefined, lang: Lang): string {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    return lang === 'fi'
+      ? `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
+      : d.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+  } catch { return iso }
+}
+
+function MetaBadge({ label, value }: { label: string; value: string }) {
+  return (
+    <span style={{ fontSize: 11, color: '#6b7280', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 4, padding: '1px 6px', marginRight: 4 }}>
+      <span style={{ color: '#9ca3af' }}>{label}: </span>{value}
+    </span>
+  )
 }
 
 export default function OutputsTab({ lang, isActive }: Props) {
@@ -71,16 +101,38 @@ export default function OutputsTab({ lang, isActive }: Props) {
         <div className="card">
           <h2>{t('word_docs', lang)}</h2>
           {docxFiles.map(f => (
-            <div key={f.path} className="output-item">
-              <span className="output-icon">📝</span>
-              <span className="output-name">{f.name}</span>
-              <span className="output-size">{formatSize(f.size)}</span>
-              <button className="btn btn-secondary" style={{ padding: '6px 14px' }} onClick={() => download(f.path)}>
-                {t('download_btn', lang)}
-              </button>
-              <button className="btn btn-secondary" style={{ padding: '6px 14px', color: '#dc2626' }} onClick={() => deleteFile(f)}>
-                {t('delete_btn', lang)}
-              </button>
+            <div key={f.path} className="output-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
+              <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 8 }}>
+                <span className="output-icon">📝</span>
+                <span className="output-name" style={{ flex: 1 }}>{f.name}</span>
+                <span className="output-size">{formatSize(f.size)}</span>
+                <button className="btn btn-secondary" style={{ padding: '6px 14px' }} onClick={() => download(f.path)}>
+                  {t('download_btn', lang)}
+                </button>
+                <button className="btn btn-secondary" style={{ padding: '6px 14px', color: '#dc2626' }} onClick={() => deleteFile(f)}>
+                  {t('delete_btn', lang)}
+                </button>
+              </div>
+              {f.meta && (
+                <div style={{ paddingLeft: 32 }}>
+                  {(f.meta.company_name || f.meta.customer_name) && (
+                    <MetaBadge
+                      label={f.meta.company_name ? 'Company' : 'Customer'}
+                      value={f.meta.company_name || f.meta.customer_name || ''}
+                    />
+                  )}
+                  {f.meta.project_name && <MetaBadge label="Project" value={f.meta.project_name} />}
+                  {f.meta.generated_at && (
+                    <MetaBadge label={t('meta_generated', lang)} value={formatDate(f.meta.generated_at, lang)} />
+                  )}
+                  {f.meta.elapsed_total_s != null && (
+                    <MetaBadge label={t('meta_duration', lang)} value={`${f.meta.elapsed_total_s}s`} />
+                  )}
+                  {f.meta.document_language && (
+                    <MetaBadge label={t('meta_language', lang)} value={f.meta.document_language.toUpperCase()} />
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

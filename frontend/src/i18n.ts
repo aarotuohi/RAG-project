@@ -94,6 +94,8 @@ const translations = {
     regen_section_btn: '🔄',
     regen_section_running: '⏳',
     regen_dismiss: '✕',
+    preview_section: '👁',
+    preview_section_hide: '▲',
     regen_error: 'Regeneration failed',
 
     // OutputsTab
@@ -107,6 +109,15 @@ const translations = {
     download_btn: '⬇️ Download',
     delete_btn: '🗑️ Delete',
     confirm_delete: 'Are you sure you want to delete',
+
+    // Outputs metadata
+    meta_generated: 'Generated',
+    meta_duration: 'Duration',
+    meta_language: 'Language',
+
+    // Rate-limit feedback
+    gen_busy: 'A generation is already in progress. Please wait for it to finish.',
+    extract_busy: 'Extraction already in progress. Please wait.',
 
   },
   fi: {
@@ -202,6 +213,8 @@ const translations = {
     regen_section_btn: '🔄',
     regen_section_running: '⏳',
     regen_dismiss: '✕',
+    preview_section: '👁',
+    preview_section_hide: '▲',
     regen_error: 'Uudelleenluonti epäonnistui',
 
     // OutputsTab
@@ -215,6 +228,15 @@ const translations = {
     download_btn: '⬇️ Lataa',
     delete_btn: '🗑️ Poista',
     confirm_delete: 'Haluatko varmasti poistaa',
+
+    // Outputs metadata
+    meta_generated: 'Luotu',
+    meta_duration: 'Kesto',
+    meta_language: 'Kieli',
+
+    // Rate-limit feedback
+    gen_busy: 'Luonti on jo käynnissä. Odota sen valmistumista.',
+    extract_busy: 'Purku on jo käynnissä. Odota hetki.',
 
   },
 } as const

@@ -21,9 +21,10 @@ interface ProjectData {
 interface ProgressEvent {
   status: 'progress' | 'done' | 'error' | 'warning' | 'stats'
   section: string; message: string
-  docx?: string; pdf?: string
+  docx?: string; pdf?: string; xlsx?: string
   elapsed_s?: number; tokens?: number
   elapsed_total_s?: number
+  sections?: Record<string, any>
 }
 
 const SECTIONS_ORDER = [
@@ -99,6 +100,130 @@ function Field({ label, name, value, onChange, full=false, area=false }: {
   )
 }
 
+function getPreviewData(previews: Record<string, any>, key: string): any {
+  if (key === 'thank_you') return previews['thankyou']
+  if (key === 'section10') return previews['section10_text']
+  return previews[key]
+}
+
+function SectionPreviewPanel({ sectionKey, data, previews }: {
+  sectionKey: string; data: any; previews: Record<string, any>
+}) {
+  if (!data) return null
+  const boxStyle = { whiteSpace: 'pre-wrap' as const, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, padding: 10, fontSize: 12, color: '#374151' }
+
+  if (sectionKey === 'section1') {
+    return (
+      <div>
+        <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 12 }}>Company Background</div>
+        <div style={boxStyle}>{data.company_background || '\u2014'}</div>
+        <div style={{ fontWeight: 600, margin: '8px 0 4px', fontSize: 12 }}>Goals</div>
+        <div style={boxStyle}>{data.goals_text || '\u2014'}</div>
+      </div>
+    )
+  }
+
+  if (sectionKey === 'section2') {
+    return (
+      <>
+        {data.description_text && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 12 }}>Description</div>
+            <div style={boxStyle}>{data.description_text}</div>
+          </div>
+        )}
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: '#f1f5f9' }}>
+              <th style={{ textAlign: 'left', padding: '4px 8px' }}>Step</th>
+              <th style={{ textAlign: 'right', padding: '4px 8px' }}>€/h</th>
+              <th style={{ textAlign: 'right', padding: '4px 8px' }}>Hours</th>
+              <th style={{ textAlign: 'right', padding: '4px 8px' }}>Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(data.steps || []).map((s: any, i: number) => {
+              const stepNum = s.step_id?.split(' ').pop() ?? (i + 1)
+              return [
+                <tr key={`m${i}`} style={{ borderBottom: '1px solid #e5e7eb', background: '#f8fafc' }}>
+                  <td style={{ padding: '4px 8px', fontWeight: 700 }}>{s.step_id}: {s.name}</td>
+                  <td />
+                  <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>{s.total_hours?.toFixed(1)}</td>
+                  <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>{fmtEur(s.total_cost ?? 0)}</td>
+                </tr>,
+                ...(s.sub_steps || []).map((ss: any, j: number) => (
+                  <tr key={`s${i}-${j}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '3px 8px 3px 20px', color: '#374151' }}>{stepNum}.{j + 1}\u00a0{ss.name}</td>
+                    <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{Math.round(ss.hourly_rate ?? 0)}</td>
+                    <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{((ss.hours ?? 0) * (ss.persons ?? 1)).toFixed(1)}</td>
+                    <td style={{ padding: '3px 8px', textAlign: 'right', color: '#6b7280' }}>{ss.total?.toFixed(2)}\u20ac</td>
+                  </tr>
+                )),
+              ]
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: '2px solid #e5e7eb', background: '#f1f5f9' }}>
+              <td style={{ padding: '4px 8px', fontWeight: 700 }}>Grand Total</td>
+              <td />
+              <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>
+                {(data.steps || []).reduce((s: number, r: any) => s + (r.total_hours ?? 0), 0).toFixed(1)} h
+              </td>
+              <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>{fmtEur(data.grand_total ?? 0)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </>
+    )
+  }
+
+  if (sectionKey === 'section8') {
+    return (
+      <>
+        {data.intro_text && <div style={{ ...boxStyle, marginBottom: 6 }}>{data.intro_text}</div>}
+        {(data.experts || []).length > 0 && (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: '#f1f5f9' }}>
+                <th style={{ textAlign: 'left', padding: '4px 8px' }}>Name</th>
+                <th style={{ textAlign: 'left', padding: '4px 8px' }}>Title</th>
+                <th style={{ textAlign: 'left', padding: '4px 8px' }}>Role on Project</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.experts || []).map((e: any, i: number) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '4px 8px', fontWeight: 600 }}>{e.name}</td>
+                  <td style={{ padding: '4px 8px', color: '#6b7280' }}>{e.title}</td>
+                  <td style={{ padding: '4px 8px', color: '#374151' }}>{e.role}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </>
+    )
+  }
+
+  if (sectionKey === 'section9') {
+    const payment = previews['section9_payment']
+    return (
+      <>
+        <div style={boxStyle}>{typeof data === 'string' ? data : JSON.stringify(data, null, 2)}</div>
+        {payment && (
+          <>
+            <div style={{ fontWeight: 600, margin: '8px 0 4px', fontSize: 12 }}>Payment Terms</div>
+            <div style={boxStyle}>{payment}</div>
+          </>
+        )}
+      </>
+    )
+  }
+
+  const text = typeof data === 'string' ? data : JSON.stringify(data, null, 2)
+  return <div style={boxStyle}>{text}</div>
+}
+
 export default function NewOfferTab({ lang }: Props) {
   const _draft = loadDraft()
   const [project, setProject] = useState<ProjectData>(_draft?.project ?? { ...EMPTY, document_date: formatDateFi(new Date()) })
@@ -129,6 +254,8 @@ export default function NewOfferTab({ lang }: Props) {
   const [regeneratingKey, setRegeneratingKey] = useState<string | null>(null)
   const [regenResults, setRegenResults] = useState<Record<string, { raw: any; elapsed_s: number }>>({})
   const [regenErrors, setRegenErrors] = useState<Record<string, string>>({})
+  const [sectionPreviews, setSectionPreviews] = useState<Record<string, any>>({})
+  const [expandedPreviews, setExpandedPreviews] = useState<Set<string>>(new Set())
 
   // Auto-save draft whenever form fields or options change (skip during generation)
   useEffect(() => {
@@ -239,6 +366,15 @@ export default function NewOfferTab({ lang }: Props) {
         signal: controller.signal,
       })
 
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        const msg = err.detail || (resp.status === 429 ? t('gen_busy', lang) : t('test_error', lang))
+        setEvents([{ status: 'error', section: 'init', message: msg } as ProgressEvent])
+        setGenerating(false)
+        setStep('generating')  // show the error in the progress view
+        return
+      }
+
       const reader = resp.body!.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -260,6 +396,7 @@ export default function NewOfferTab({ lang }: Props) {
               if (ev.status === 'done' && ev.docx) {
                 if (ev.elapsed_total_s != null) setTotalElapsed(ev.elapsed_total_s)
                 setResult({ docx: ev.docx, pdf: ev.pdf || undefined, xlsx: (ev as any).xlsx || undefined })
+                if (ev.sections) setSectionPreviews(ev.sections)
                 clearDraft()
                 setDraftToast(null)
                 setStep('done')
@@ -282,6 +419,8 @@ export default function NewOfferTab({ lang }: Props) {
     setSectionStats({})
     setTotalElapsed(null)
     setResult(null)
+    setSectionPreviews({})
+    setExpandedPreviews(new Set())
     setStep('form')
   }
 
@@ -726,6 +865,8 @@ export default function NewOfferTab({ lang }: Props) {
               const isRegening = regeneratingKey === sectionKey
               const regenResult = regenResults[sectionKey]
               const regenError = regenErrors[sectionKey]
+              const hasPreview = step === 'done' && !['docx', 'pdf'].includes(sectionKey) && !!getPreviewData(sectionPreviews, sectionKey)
+              const isExpanded = expandedPreviews.has(sectionKey)
               return (
                 <Fragment key={sectionKey}>
                   <li className="progress-item" style={{ display: 'flex', alignItems: 'center' }}>
@@ -745,15 +886,28 @@ export default function NewOfferTab({ lang }: Props) {
                     )}
                     {ev && ev.status === 'warning' && <span style={{ fontSize: 12, color: '#c27803', marginLeft: 8 }}>⚠️ {ev.message}</span>}
                     {ev && ev.status === 'error' && <span style={{ fontSize: 12, color: '#dc2626', marginLeft: 8 }}>✕ {ev.message}</span>}
-                    {canRegen && (
-                      <button
-                        title="Regenerate this section"
-                        onClick={() => isRegening ? (regenAbortRef.current?.abort(), setRegeneratingKey(null)) : regenSection(sectionKey)}
-                        disabled={regeneratingKey !== null && !isRegening}
-                        style={{ marginLeft: 'auto', fontSize: 13, background: 'none', border: '1px solid #d1d5db', borderRadius: 4, padding: '1px 6px', cursor: 'pointer', color: isRegening ? '#c27803' : '#6b7280' }}
-                      >
-                        {isRegening ? t('regen_section_running', lang) : t('regen_section_btn', lang)}
-                      </button>
+                    {(hasPreview || canRegen) && (
+                      <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                        {hasPreview && (
+                          <button
+                            title={isExpanded ? t('preview_section_hide', lang) : t('preview_section', lang)}
+                            onClick={() => setExpandedPreviews(prev => { const n = new Set(prev); if (n.has(sectionKey)) n.delete(sectionKey); else n.add(sectionKey); return n })}
+                            style={{ fontSize: 12, background: 'none', border: `1px solid ${isExpanded ? '#6366f1' : '#d1d5db'}`, borderRadius: 4, padding: '1px 6px', cursor: 'pointer', color: isExpanded ? '#6366f1' : '#6b7280' }}
+                          >
+                            {isExpanded ? t('preview_section_hide', lang) : t('preview_section', lang)}
+                          </button>
+                        )}
+                        {canRegen && (
+                          <button
+                            title="Regenerate this section"
+                            onClick={() => isRegening ? (regenAbortRef.current?.abort(), setRegeneratingKey(null)) : regenSection(sectionKey)}
+                            disabled={regeneratingKey !== null && !isRegening}
+                            style={{ fontSize: 13, background: 'none', border: '1px solid #d1d5db', borderRadius: 4, padding: '1px 6px', cursor: 'pointer', color: isRegening ? '#c27803' : '#6b7280' }}
+                          >
+                            {isRegening ? t('regen_section_running', lang) : t('regen_section_btn', lang)}
+                          </button>
+                        )}
+                      </span>
                     )}
                   </li>
                   {(regenResult || regenError) && (
@@ -859,6 +1013,13 @@ export default function NewOfferTab({ lang }: Props) {
                       </div>
                     </li>
                   )}
+                  {isExpanded && (
+                    <li style={{ listStyle: 'none', paddingLeft: 24, paddingBottom: 8 }}>
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 14px' }}>
+                        <SectionPreviewPanel sectionKey={sectionKey} data={getPreviewData(sectionPreviews, sectionKey)} previews={sectionPreviews} />
+                      </div>
+                    </li>
+                  )}
                 </Fragment>
               )
             })}
@@ -881,7 +1042,7 @@ export default function NewOfferTab({ lang }: Props) {
                   {t('download_xlsx', lang)}
                 </button>
               )}
-              <button className="btn btn-secondary" onClick={() => { setStep('form'); setEvents([]); setResult(null) }}>
+              <button className="btn btn-secondary" onClick={() => { setStep('form'); setEvents([]); setResult(null); setSectionPreviews({}); setExpandedPreviews(new Set()) }}>
                 {t('edit_regenerate', lang)}
               </button>
             </div>

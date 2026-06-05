@@ -260,6 +260,7 @@ async def generate_offer(
             "pdf": str(pdf_path) if pdf_path else None,
             "xlsx": str(xlsx_path) if xlsx_path else None,
             "elapsed_total_s": round(time.time() - _total_start, 1),
+            "sections": _sections_to_json(sections),
         }
 
     except Exception as e:

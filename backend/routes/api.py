@@ -4,6 +4,8 @@ API routes — /api/status, /api/open-file-dialog, /api/upload-transcript,
 """
 from __future__ import annotations
 import asyncio
+import datetime
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile, File as FastAPIFile
@@ -23,6 +25,44 @@ from backend.config import (
     OUTPUTS_DIR, SETTINGS_FILE,
     COST_HISTORY_DIR,
 )
+
+logger = logging.getLogger(__name__)
+
+# ── Concurrency limits ────────────────────────────────────────────────────────
+# At most 1 full-offer generation and 2 transcript extractions at a time.
+_gen_sem     = asyncio.Semaphore(1)
+_extract_sem = asyncio.Semaphore(2)
+
+
+def _write_offer_meta(
+    project: ProjectData,
+    done_event: dict,
+    stats_log: dict[str, dict],
+    language: str,
+) -> None:
+    """Write a sidecar .meta.json file alongside the generated DOCX."""
+    try:
+        docx_path = Path(done_event["docx"])
+        meta = {
+            "customer_name":    project.customer_name or "",
+            "company_name":     project.company_name or "",
+            "project_name":     project.project_name or "",
+            "project_number":   project.project_number or "",
+            "document_language": language,
+            "generated_at":     datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "elapsed_total_s":  done_event.get("elapsed_total_s"),
+            "section_stats":    stats_log,
+            "files": {
+                "docx":  done_event.get("docx"),
+                "pdf":   done_event.get("pdf"),
+                "xlsx":  done_event.get("xlsx"),
+            },
+        }
+        docx_path.with_suffix(".meta.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception as _e:
+        logger.warning("Failed to write offer meta: %s", _e)
 
 
 def _load_settings() -> dict:
@@ -119,10 +159,15 @@ async def extract_transcript(req: ExtractPathRequest):
     src = Path(req.file_path)
     if not src.exists() or not src.is_file():
         raise HTTPException(status_code=400, detail=f"File not found: {req.file_path}")
+    if _extract_sem.locked():
+        raise HTTPException(status_code=429, detail="Too many extraction requests are running. Please wait a moment.")
+    await _extract_sem.acquire()
     try:
         return project_data_to_dict(await asyncio.to_thread(extract_from_file, src))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _extract_sem.release()
 
 
 # ── Offer Generation ──────────────────────────────────────────────────────────
@@ -138,13 +183,33 @@ class GenerateRequest(BaseModel):
 @router.post("/generate")
 async def generate(req: GenerateRequest):
     """Generate the full offer document. Returns a streaming NDJSON response with progress events."""
+    if _gen_sem.locked():
+        raise HTTPException(
+            status_code=429,
+            detail="A generation is already in progress. Please wait for it to finish.",
+        )
+    # Acquire before returning the StreamingResponse so the slot is held from this point.
+    # acquire() returns immediately (no suspension) because we just confirmed the semaphore is free.
+    await _gen_sem.acquire()
+
     project = ProjectData(**{k: v for k, v in req.project.items() if k in ProjectData.__dataclass_fields__})
 
     async def event_stream():
-        async for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.generate_cost_table, req.document_language):
-            # Pad to >1KB so TCP/proxy buffers flush immediately on every event
-            line = json.dumps(event) + "\n"
-            yield line + (" " * max(0, 1024 - len(line))) + "\n"
+        _stats_log: dict[str, dict] = {}
+        try:
+            async for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.generate_cost_table, req.document_language):
+                if event.get("status") == "stats":
+                    _stats_log[event["section"]] = {
+                        "elapsed_s": event.get("elapsed_s", 0),
+                        "tokens":    event.get("tokens", 0),
+                    }
+                elif event.get("status") == "done" and event.get("docx"):
+                    _write_offer_meta(project, event, _stats_log, req.document_language)
+                # Pad to >1KB so TCP/proxy buffers flush immediately on every event
+                line = json.dumps(event) + "\n"
+                yield line + (" " * max(0, 1024 - len(line))) + "\n"
+        finally:
+            _gen_sem.release()
 
     return StreamingResponse(
         event_stream(),
@@ -274,8 +339,21 @@ def download_file(path: str):
 
 @router.get("/outputs")
 def list_outputs():
-    """List all generated offer files."""
-    files = [{"name": f.name, "path": str(f), "size": f.stat().st_size} for f in OUTPUTS_DIR.iterdir() if f.is_file()]
+    """List all generated offer files, enriched with sidecar metadata where available."""
+    _VISIBLE = {'.docx', '.pdf', '.xlsx'}
+    files = []
+    for f in OUTPUTS_DIR.iterdir():
+        if not f.is_file() or f.suffix not in _VISIBLE:
+            continue
+        entry: dict = {"name": f.name, "path": str(f), "size": f.stat().st_size}
+        if f.suffix == '.docx':
+            meta_path = f.with_suffix(".meta.json")
+            if meta_path.exists():
+                try:
+                    entry["meta"] = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+        files.append(entry)
     return sorted(files, key=lambda x: x["name"], reverse=True)
 
 
@@ -294,6 +372,15 @@ def delete_output(req: DeleteRequest):
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied")
     file_path.unlink()
+    # Remove sidecar files that are only meaningful alongside the DOCX
+    if file_path.suffix == '.docx':
+        for _sidecar in ('.meta.json', '.sections.json'):
+            _sc = file_path.with_suffix(_sidecar)
+            if _sc.exists():
+                try:
+                    _sc.unlink()
+                except Exception:
+                    pass
     return {"deleted": True, "name": file_path.name}
 
 
