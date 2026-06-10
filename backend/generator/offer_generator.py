@@ -282,27 +282,28 @@ def regenerate_section(
     section_key: str,
     enable_web_search: bool = True,
     language: str = "en",
+    user_prompt: str | None = None,
 ) -> dict:
     """Re-run a single section chain and return the result."""
     if section_key == "thank_you":
-        return {"thank_you": generate_thankyou(project, language=language)}
+        return {"thank_you": generate_thankyou(project, language=language, user_prompt=user_prompt)}
     elif section_key == "section1":
-        return {"section1": generate_section1(project, enable_web_search, language=language)}
+        return {"section1": generate_section1(project, enable_web_search, language=language, user_prompt=user_prompt)}
     elif section_key == "section2":
-        return {"section2": generate_section2(project, language=language)}
+        return {"section2": generate_section2(project, language=language, user_prompt=user_prompt)}
     elif section_key == "section3":
-        return {"section3": generate_timetable(project, language=language)}
+        return {"section3": generate_timetable(project, language=language, user_prompt=user_prompt)}
     elif section_key == "section4":
-        return {"section4": generate_restrictions(project, language=language)}
+        return {"section4": generate_restrictions(project, language=language, user_prompt=user_prompt)}
     elif section_key == "section5":
-        return {"section5": generate_material(project, language=language)}
+        return {"section5": generate_material(project, language=language, user_prompt=user_prompt)}
     elif section_key == "section6":
         return {"section6": read_boilerplate("documentation", language=language)}
     elif section_key == "section7":
         return {"section7": read_boilerplate("quality", language=language)}
     elif section_key == "section8":
         team_contacts = _load_all_contacts()
-        return {"section8": generate_section8(project, language=language, contacts=team_contacts or None)}
+        return {"section8": generate_section8(project, language=language, contacts=team_contacts or None, user_prompt=user_prompt)}
     elif section_key == "section9":
         return {"section9": read_boilerplate("delivery", language=language)}
     elif section_key == "section10":

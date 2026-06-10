@@ -194,69 +194,73 @@ Materiaalimuutosteksti:"""
 )
 
 
-def generate_thankyou(project: ProjectData, language: str = "en") -> str:
+def generate_thankyou(project: ProjectData, language: str = "en", user_prompt: str | None = None) -> str:
     llm = get_llm()
+    user_instruction = f"\n\nAdditional instructions: {user_prompt.strip()}" if user_prompt and user_prompt.strip() else ""
     if language == "fi":
         prompt = _THANKYOU_PROMPT_FI.format(
             company_name=project.company_name or "yrityksenne",
             customer_name=project.customer_name or "",
             project_name=project.project_name or "projekti",
-        )
+        ) + user_instruction
     else:
         prompt = _THANKYOU_PROMPT.format(
             company_name=project.company_name or "your company",
             customer_name=project.customer_name or "",
             project_name=project.project_name or "the project",
-        ) + "\n\nWrite the entire response in English."
+        ) + "\n\nWrite the entire response in English." + user_instruction
     return llm.invoke(prompt).strip()
 
 
-def generate_timetable(project: ProjectData, language: str = "en") -> str:
+def generate_timetable(project: ProjectData, language: str = "en", user_prompt: str | None = None) -> str:
     llm = get_llm()
+    user_instruction = f"\n\nAdditional instructions: {user_prompt.strip()}" if user_prompt and user_prompt.strip() else ""
     if language == "fi":
         prompt = _TIMETABLE_PROMPT_FI.format(
             project_start=_fmt_date(project.project_start) or "Vahvistetaan myöhemmin",
             project_end=_fmt_date(project.project_end) or "Vahvistetaan myöhemmin",
             other_notes=project.other_notes or "Ei muita huomioita",
-        )
+        ) + user_instruction
     else:
         prompt = _TIMETABLE_PROMPT.format(
             project_start=_fmt_date(project.project_start) or "To be confirmed",
             project_end=_fmt_date(project.project_end) or "To be confirmed",
             other_notes=project.other_notes or "None",
-        ) + "\n\nWrite the entire response in English."
+        ) + "\n\nWrite the entire response in English." + user_instruction
     return llm.invoke(prompt).strip()
 
 
-def generate_restrictions(project: ProjectData, language: str = "en") -> str:
+def generate_restrictions(project: ProjectData, language: str = "en", user_prompt: str | None = None) -> str:
     llm = get_llm()
+    user_instruction = f"\n\nAdditional instructions: {user_prompt.strip()}" if user_prompt and user_prompt.strip() else ""
     if language == "fi":
         prompt = _RESTRICTIONS_PROMPT_FI.format(
             payment_type=project.payment_type or "tuntiperusteinen",
             constraints=project.constraints or "Ei rajoitteita",
             required_expertise=project.required_expertise or "Ei määritelty",
-        )
+        ) + user_instruction
     else:
         prompt = _RESTRICTIONS_PROMPT.format(
             payment_type=project.payment_type or "hourly",
             constraints=project.constraints or "None",
             required_expertise=project.required_expertise or "Not specified",
-        ) + "\n\nWrite the entire response in English."
+        ) + "\n\nWrite the entire response in English." + user_instruction
     return llm.invoke(prompt).strip()
 
 
-def generate_material(project: ProjectData, language: str = "en") -> str:
+def generate_material(project: ProjectData, language: str = "en", user_prompt: str | None = None) -> str:
     llm = get_llm()
+    user_instruction = f"\n\nAdditional instructions: {user_prompt.strip()}" if user_prompt and user_prompt.strip() else ""
     if language == "fi":
         prompt = _MATERIAL_PROMPT_FI.format(
             material_deliverables=project.material_deliverables or "Vahvistetaan myöhemmin",
             project_name=project.project_name or "projekti",
-        )
+        ) + user_instruction
     else:
         prompt = _MATERIAL_PROMPT.format(
             material_deliverables=project.material_deliverables or "To be confirmed",
             project_name=project.project_name or "the project",
-        ) + "\n\nWrite the entire response in English."
+        ) + "\n\nWrite the entire response in English." + user_instruction
     return llm.invoke(prompt).strip()
 
 

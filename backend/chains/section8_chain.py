@@ -79,7 +79,7 @@ def _extract_selected(ranking_text: str) -> list[tuple[str, str]]:
     return results
 
 
-def generate_section8(project: ProjectData, language: str = "en", contacts: list[dict] | None = None) -> dict:
+def generate_section8(project: ProjectData, language: str = "en", contacts: list[dict] | None = None, user_prompt: str | None = None) -> dict:
     """
     Returns:
       {
@@ -92,11 +92,11 @@ def generate_section8(project: ProjectData, language: str = "en", contacts: list
     list.  Falls back to CV-based ChromaDB retrieval otherwise.
     """
     if contacts:
-        return _generate_from_contacts(project, contacts, language)
-    return _generate_from_cvs(project, language)
+        return _generate_from_contacts(project, contacts, language, user_prompt)
+    return _generate_from_cvs(project, language, user_prompt)
 
 
-def _generate_from_contacts(project: ProjectData, contacts: list[dict], language: str) -> dict:
+def _generate_from_contacts(project: ProjectData, contacts: list[dict], language: str, user_prompt: str | None = None) -> dict:
     """Select project team members from the contacts Excel using the LLM."""
     llm = get_llm()
 
@@ -119,6 +119,8 @@ def _generate_from_contacts(project: ProjectData, contacts: list[dict], language
         constraints=project.constraints or "None",
         expert_summaries=expert_summaries[:5000],
     ) + f"\n\n{lang_note}"
+    if user_prompt and user_prompt.strip():
+        ranking_prompt += f"\n\nAdditional instructions: {user_prompt.strip()}"
 
     ranking_response = llm.invoke(ranking_prompt)
     selected = _extract_selected(ranking_response)
@@ -146,7 +148,7 @@ def _generate_from_contacts(project: ProjectData, contacts: list[dict], language
     return {"intro_text": intro_text, "experts": experts}
 
 
-def _generate_from_cvs(project: ProjectData, language: str) -> dict:
+def _generate_from_cvs(project: ProjectData, language: str, user_prompt: str | None = None) -> dict:
     llm = get_llm()
 
     query = (
@@ -190,6 +192,8 @@ def _generate_from_cvs(project: ProjectData, language: str) -> dict:
         constraints=project.constraints or "None",
         expert_summaries=expert_summaries[:5000],
     ) + f"\n\n{lang_note}"
+    if user_prompt and user_prompt.strip():
+        ranking_prompt += f"\n\nAdditional instructions: {user_prompt.strip()}"
     ranking_response = llm.invoke(ranking_prompt)
     selected = _extract_selected(ranking_response)
 

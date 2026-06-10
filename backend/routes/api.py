@@ -233,6 +233,7 @@ class RegenerateSectionRequest(BaseModel):
     document_language: str = "en"
     docx_path: str | None = None   # current offer DOCX path; if set, DOCX is rebuilt
     export_pdf: bool = True        # rebuild PDF when docx_path is provided
+    user_prompt: str | None = None  # optional improvement/fix instructions from the user
 
 
 @router.post("/regenerate-section")
@@ -258,7 +259,7 @@ async def regenerate_section_endpoint(req: RegenerateSectionRequest):
         try:
             raw_result = await asyncio.to_thread(
                 regenerate_section, project, req.section_key,
-                req.enable_web_search, req.document_language,
+                req.enable_web_search, req.document_language, req.user_prompt,
             )
             elapsed = round(time.time() - t0, 1)
 

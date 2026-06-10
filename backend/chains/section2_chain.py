@@ -322,7 +322,7 @@ def _retrieve_similar_projects(description: str, k: int = 8, categories: list[st
 
 
 
-def generate_section2(project: ProjectData, language: str = "en") -> dict:
+def generate_section2(project: ProjectData, language: str = "en", user_prompt: str | None = None) -> dict:
     """
     Returns:
       {
@@ -370,6 +370,8 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
     desc_prompt = desc_template.format(**desc_kwargs)
     if not is_fi:
         desc_prompt += f"\n\n{lang_note}"
+    if user_prompt and user_prompt.strip():
+        desc_prompt += f"\n\nAdditional instructions: {user_prompt.strip()}"
     description_text = llm.invoke(desc_prompt).strip()
 
     # --- Short description (single sentence for Excel header) ---
@@ -417,6 +419,8 @@ def generate_section2(project: ProjectData, language: str = "en") -> dict:
         est_prompt += "\n\nIMPORTANT: All text fields in the JSON (name, output, sub-step name) MUST be written in English, regardless of the language of the historical data."
     else:
         est_prompt += "\n\nTÄRKEÄÄ: Kaikki JSON:n tekstikentät (name, output, alivaiheen name) TÄYTYY kirjoittaa suomeksi, riippumatta historiallisen datan kielestä."
+    if user_prompt and user_prompt.strip():
+        est_prompt += f"\n\nAdditional instructions: {user_prompt.strip()}"
     raw = llm.invoke(est_prompt)
     cleaned = _clean_json(raw)
 

@@ -257,12 +257,13 @@ Section 1 text (in the language specified above):"""
 )
 
 
-def generate_section1(project: ProjectData, enable_web_search: bool = True, language: str = "en") -> dict[str, str]:
+def generate_section1(project: ProjectData, enable_web_search: bool = True, language: str = "en", user_prompt: str | None = None) -> dict[str, str]:
     """
     Returns {'company_background': str, 'goals_text': str}
     """
     lang_note = "Write the entire response in Finnish." if language == "fi" else "Write the entire response in English."
     llm = get_llm()
+    user_instruction = f"\n\nAdditional instructions: {user_prompt.strip()}" if user_prompt and user_prompt.strip() else ""
 
     # --- Part A: Company background ---
     company_background = ""
@@ -277,7 +278,7 @@ def generate_section1(project: ProjectData, enable_web_search: bool = True, lang
                 project_name=project.project_name or "the Project",
                 goals=project.goals or "Not specified",
                 search_results=results[:5000],
-            )
+            ) + user_instruction
             company_background = llm.invoke(prompt).strip()
         except Exception as e:
             company_background = (
@@ -298,7 +299,7 @@ def generate_section1(project: ProjectData, enable_web_search: bool = True, lang
             goals=project.goals or "Not specified",
             constraints=project.constraints or "Not specified",
             other_notes=project.other_notes or "None",
-        )
+        ) + user_instruction
         goals_text = llm.invoke(prompt).strip()
     else:
         goals_text = "[Goals and constraints not found in transcript. Please fill in manually.]"

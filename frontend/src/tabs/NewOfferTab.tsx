@@ -256,6 +256,8 @@ export default function NewOfferTab({ lang }: Props) {
   const [regenErrors, setRegenErrors] = useState<Record<string, string>>({})
   const [sectionPreviews, setSectionPreviews] = useState<Record<string, any>>({})
   const [expandedPreviews, setExpandedPreviews] = useState<Set<string>>(new Set())
+  const [regenPrompts, setRegenPrompts] = useState<Record<string, string>>({})
+  const [regenPromptOpen, setRegenPromptOpen] = useState<Set<string>>(new Set())
 
   // Auto-save draft whenever form fields or options change (skip during generation)
   useEffect(() => {
@@ -428,10 +430,11 @@ export default function NewOfferTab({ lang }: Props) {
     window.open(`/api/download?path=${encodeURIComponent(path)}`, '_blank')
   }
 
-  const regenSection = async (sectionKey: string) => {
+  const regenSection = async (sectionKey: string, userPrompt?: string) => {
     const controller = new AbortController()
     regenAbortRef.current = controller
     setRegeneratingKey(sectionKey)
+    setRegenPromptOpen(prev => { const n = new Set(prev); n.delete(sectionKey); return n })
     setRegenErrors(prev => { const n = { ...prev }; delete n[sectionKey]; return n })
     setRegenResults(prev => { const n = { ...prev }; delete n[sectionKey]; return n })
     try {
@@ -445,6 +448,7 @@ export default function NewOfferTab({ lang }: Props) {
           document_language: documentLanguage,
           docx_path: result?.docx ?? null,
           export_pdf: exportPdf,
+          user_prompt: userPrompt || null,
         }),
         signal: controller.signal,
       })
@@ -867,6 +871,8 @@ export default function NewOfferTab({ lang }: Props) {
               const regenError = regenErrors[sectionKey]
               const hasPreview = step === 'done' && !['docx', 'pdf'].includes(sectionKey) && !!getPreviewData(sectionPreviews, sectionKey)
               const isExpanded = expandedPreviews.has(sectionKey)
+              const isPromptOpen = regenPromptOpen.has(sectionKey)
+              const promptValue = regenPrompts[sectionKey] ?? ''
               return (
                 <Fragment key={sectionKey}>
                   <li className="progress-item" style={{ display: 'flex', alignItems: 'center' }}>
@@ -899,10 +905,22 @@ export default function NewOfferTab({ lang }: Props) {
                         )}
                         {canRegen && (
                           <button
-                            title="Regenerate this section"
-                            onClick={() => isRegening ? (regenAbortRef.current?.abort(), setRegeneratingKey(null)) : regenSection(sectionKey)}
+                            title={isRegening ? 'Cancel' : 'Regenerate this section'}
+                            onClick={() => {
+                              if (isRegening) {
+                                regenAbortRef.current?.abort()
+                                setRegeneratingKey(null)
+                              } else {
+                                setRegenPromptOpen(prev => {
+                                  const n = new Set(prev)
+                                  if (n.has(sectionKey)) n.delete(sectionKey)
+                                  else n.add(sectionKey)
+                                  return n
+                                })
+                              }
+                            }}
                             disabled={regeneratingKey !== null && !isRegening}
-                            style={{ fontSize: 13, background: 'none', border: '1px solid #d1d5db', borderRadius: 4, padding: '1px 6px', cursor: 'pointer', color: isRegening ? '#c27803' : '#6b7280' }}
+                            style={{ fontSize: 13, background: isPromptOpen ? '#eef2ff' : 'none', border: `1px solid ${isPromptOpen ? '#6366f1' : '#d1d5db'}`, borderRadius: 4, padding: '1px 6px', cursor: 'pointer', color: isRegening ? '#c27803' : isPromptOpen ? '#6366f1' : '#6b7280' }}
                           >
                             {isRegening ? t('regen_section_running', lang) : t('regen_section_btn', lang)}
                           </button>
@@ -910,6 +928,44 @@ export default function NewOfferTab({ lang }: Props) {
                       </span>
                     )}
                   </li>
+                  {canRegen && isPromptOpen && !isRegening && (
+                    <li style={{ listStyle: 'none', paddingLeft: 24, paddingBottom: 8 }}>
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 12px', fontSize: 13 }}>
+                        <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 12, color: '#374151' }}>{t('regen_prompt_label', lang)}</div>
+                        <textarea
+                          value={promptValue}
+                          onChange={e => setRegenPrompts(prev => ({ ...prev, [sectionKey]: e.target.value }))}
+                          placeholder={t('regen_prompt_placeholder', lang)}
+                          rows={3}
+                          style={{ width: '100%', fontSize: 12, border: '1px solid #d1d5db', borderRadius: 4, padding: '6px 8px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                        />
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                          <button
+                            className="btn btn-primary"
+                            style={{ fontSize: 12, padding: '4px 12px' }}
+                            disabled={regeneratingKey !== null}
+                            onClick={() => regenSection(sectionKey, promptValue || undefined)}
+                          >
+                            {t('regen_with_prompt', lang)}
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: 12, padding: '4px 12px' }}
+                            disabled={regeneratingKey !== null}
+                            onClick={() => regenSection(sectionKey)}
+                          >
+                            {t('regen_fresh', lang)}
+                          </button>
+                          <button
+                            style={{ fontSize: 12, padding: '4px 10px', background: 'none', border: '1px solid #d1d5db', borderRadius: 4, cursor: 'pointer', color: '#6b7280' }}
+                            onClick={() => setRegenPromptOpen(prev => { const n = new Set(prev); n.delete(sectionKey); return n })}
+                          >
+                            {t('regen_cancel_open', lang)}
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  )}
                   {(regenResult || regenError) && (
                     <li style={{ listStyle: 'none', paddingLeft: 24, paddingBottom: 8 }}>
                       <div style={{ background: regenError ? '#fef2f2' : '#f8fafc', border: `1px solid ${regenError ? '#fecaca' : '#e2e8f0'}`, borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>

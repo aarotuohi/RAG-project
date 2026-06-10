@@ -97,6 +97,11 @@ const translations = {
     preview_section: '👁',
     preview_section_hide: '▲',
     regen_error: 'Regeneration failed',
+    regen_prompt_placeholder: 'Describe improvements or fixes for this section…',
+    regen_prompt_label: 'Improvement hints (optional)',
+    regen_with_prompt: 'Regenerate with hints',
+    regen_fresh: 'Regenerate fresh',
+    regen_cancel_open: 'Cancel',
 
     // OutputsTab
     generated_offers: 'Generated Offers',
@@ -216,6 +221,11 @@ const translations = {
     preview_section: '👁',
     preview_section_hide: '▲',
     regen_error: 'Uudelleenluonti epäonnistui',
+    regen_prompt_placeholder: 'Kuvaile parannuksia tai korjauksia tähän osioon…',
+    regen_prompt_label: 'Parannusehdotukset (valinnainen)',
+    regen_with_prompt: 'Luo uudelleen ohjeilla',
+    regen_fresh: 'Luo täysin uudelleen',
+    regen_cancel_open: 'Peruuta',
 
     // OutputsTab
     generated_offers: 'Luodut tarjoukset',
