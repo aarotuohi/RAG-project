@@ -5,23 +5,35 @@ import { t, type Lang } from './i18n'
 
 type Tab = 'new-offer' | 'outputs'
 
+interface ModelOption {
+  id: string
+  label: string
+}
+
 interface Status {
   ollama_running: boolean
   active_model: string
   recommended_model: string
   local_models: string[]
   collection_counts: Record<string, number>
+  available_models: ModelOption[]
 }
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('new-offer')
   const [status, setStatus] = useState<Status | null>(null)
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('aisales_lang') as Lang) || 'en')
+  const [activeModel, setActiveModel] = useState<string>('')
 
   const fetchStatus = () => {
     fetch('/api/status')
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(data => { if (data && typeof data === 'object' && !Array.isArray(data)) setStatus(data) })
+      .then(data => {
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+          setStatus(data)
+          setActiveModel((prev) => prev || data.active_model || '')
+        }
+      })
       .catch(() => setStatus(null))
   }
 
@@ -39,6 +51,15 @@ export default function App() {
 
   const ollamaOk = status?.ollama_running ?? false
 
+  const handleModelChange = (modelId: string) => {
+    setActiveModel(modelId)
+    fetch('/api/set-model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_id: modelId }),
+    }).catch(() => { /* non-critical — UI already updated */ })
+  }
+
   const tabLabels: Record<Tab, string> = {
     'new-offer': t('nav_new_offer', lang),
     'outputs':   t('nav_outputs', lang),
@@ -47,7 +68,7 @@ export default function App() {
   return (
     <div className="app">
       <nav className="nav">
-        <span className="nav-brand">AISALES</span>
+        <img src="/LINK_LOGO.png" alt="AISALES" className="nav-brand" style={{ height: 36, objectFit: 'contain' }} />
         {(['new-offer', 'outputs'] as Tab[]).map(tab_ => (
           <button
             key={tab_}
@@ -60,9 +81,32 @@ export default function App() {
         <div className="nav-status">
           <span className={`dot${ollamaOk ? ' ok' : ''}`} />
           <span style={{ minWidth: 90 }}>{ollamaOk ? t('ollama_running', lang) : t('ollama_offline', lang)}</span>
-          <span className="badge badge-blue" style={{ marginLeft: 8, minWidth: 60, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={status?.recommended_model ? `Recommended: ${status.recommended_model}` : ''}>
-            {status?.active_model ?? '…'}
-          </span>
+          {status?.available_models && status.available_models.length > 0 ? (
+            <select
+              value={activeModel}
+              onChange={e => handleModelChange(e.target.value)}
+              title={t('model_selector_label', lang)}
+              style={{
+                marginLeft: 8,
+                padding: '3px 6px',
+                borderRadius: 6,
+                border: '1px solid #d1d5db',
+                background: '#f9fafb',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 500,
+                maxWidth: 200,
+              }}
+            >
+              {status.available_models.map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="badge badge-blue" style={{ marginLeft: 8, minWidth: 60, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activeModel || status?.active_model || '…'}
+            </span>
+          )}
           <button
             onClick={toggleLang}
             style={{

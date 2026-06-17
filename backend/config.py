@@ -35,6 +35,17 @@ ANTHROPIC_API_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL      = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251022")
 ANTHROPIC_MAX_TOKENS = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "4096"))
 
+# Available Anthropic models exposed in the UI dropdown
+AVAILABLE_ANTHROPIC_MODELS: list[dict] = [
+    {"id": "claude-haiku-4-5-20251022",  "label": "Claude Haiku 4.5  (fast)"},
+    {"id": "claude-sonnet-4-5-20251022", "label": "Claude Sonnet 4.5 (balanced)"},
+    {"id": "claude-sonnet-4-20250514",   "label": "Claude Sonnet 4   (powerful)"},
+    {"id": "claude-opus-4-20250514",     "label": "Claude Opus 4     (strongest)"},
+]
+
+# Runtime-mutable active model (changed via /api/set-model; starts from env/default above)
+_active_anthropic_model: str = ANTHROPIC_MODEL
+
 # ChromaDB settings 
 CHROMA_COLLECTION_COST     = "cost_history"
 CHROMA_COLLECTION_CV       = "cv_database"

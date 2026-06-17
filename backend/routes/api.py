@@ -16,7 +16,7 @@ import json
 from backend.chains.extraction_chain import extract_from_file, ProjectData, project_data_to_dict
 from backend.generator.offer_generator import generate_offer, regenerate_section
 from backend.vectorstore.chroma_client import collection_count
-from backend.ollama_client import recommend_model, list_local_models, is_ollama_running, is_anthropic_reachable
+from backend.ollama_client import recommend_model, list_local_models, is_ollama_running, is_anthropic_reachable, set_active_model
 from backend.ingestion.ingestion_queue import submit_job, get_job, list_jobs, queue_size
 import backend.config as _cfg
 from backend.config import (
@@ -118,7 +118,8 @@ def get_status():
     _anthropic_ok, _anthropic_detail = is_anthropic_reachable()
     return {
         "llm_provider": "anthropic",
-        "active_model": _cfg.ANTHROPIC_MODEL,
+        "active_model": _cfg._active_anthropic_model,
+        "available_models": _cfg.AVAILABLE_ANTHROPIC_MODELS,
         "anthropic_reachable": _anthropic_ok,
         "anthropic_detail": _anthropic_detail,
         "embed_model": _cfg.OLLAMA_EMBED_MODEL,
@@ -131,6 +132,23 @@ def get_status():
             "contacts":     collection_count(CHROMA_COLLECTION_CONTACTS),
         },
     }
+
+
+class SetModelRequest(BaseModel):
+    model_id: str
+
+
+@router.post("/set-model")
+def set_model(req: SetModelRequest):
+    """Switch the active Anthropic LLM model at runtime."""
+    valid_ids = {m["id"] for m in _cfg.AVAILABLE_ANTHROPIC_MODELS}
+    if req.model_id not in valid_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown model '{req.model_id}'. Valid: {sorted(valid_ids)}",
+        )
+    set_active_model(req.model_id)
+    return {"active_model": req.model_id}
 
 
 # ── Transcript Extraction ─────────────────────────────────────────────────────

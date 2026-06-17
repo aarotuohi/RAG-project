@@ -7,6 +7,7 @@ const translations = {
     nav_outputs: '📄 Outputs',
     ollama_running: 'Ollama running',
     ollama_offline: 'Ollama offline',
+    model_selector_label: 'LLM Model',
 
     // NewOfferTab
     new_offer: 'New Offer',
@@ -131,6 +132,7 @@ const translations = {
     nav_outputs: '📄 Tuotokset',
     ollama_running: 'Ollama käynnissä',
     ollama_offline: 'Ollama offline',
+    model_selector_label: 'LLM-malli',
 
     // NewOfferTab
     new_offer: 'Uusi tarjous',

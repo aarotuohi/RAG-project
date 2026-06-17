@@ -199,6 +199,49 @@ Tiivistelmä:"""
 )
 
 
+_MAX_EST_RETRIES = 3
+
+
+def _validate_step_list(parsed: object) -> list[str]:
+    """Return a list of human-readable validation errors, empty when the structure is valid."""
+    errors: list[str] = []
+    if not isinstance(parsed, list):
+        errors.append("Top-level value is not a JSON array.")
+        return errors
+    if len(parsed) == 0:
+        errors.append("The array is empty — at least one step is required.")
+        return errors
+    for i, step in enumerate(parsed):
+        prefix = f"Step {i+1}"
+        if not isinstance(step, dict):
+            errors.append(f"{prefix}: item is not an object.")
+            continue
+        misplaced = [f for f in ("hourly_rate", "hours", "persons") if f in step]
+        if misplaced:
+            errors.append(
+                f"{prefix} '{step.get('name', '')}': fields {misplaced} must be inside "
+                "sub_steps items, not on the step object itself."
+            )
+        sub_steps = step.get("sub_steps")
+        if not isinstance(sub_steps, list):
+            errors.append(f"{prefix} '{step.get('name', '')}': 'sub_steps' must be an array.")
+            continue
+        if len(sub_steps) == 0:
+            errors.append(f"{prefix} '{step.get('name', '')}': 'sub_steps' array is empty.")
+        for j, ss in enumerate(sub_steps):
+            ss_prefix = f"{prefix}, sub_step {j+1}"
+            if not isinstance(ss, dict):
+                errors.append(f"{ss_prefix}: item is not an object.")
+                continue
+            for num_field in ("hourly_rate", "hours", "persons"):
+                val = ss.get(num_field)
+                if val is None:
+                    errors.append(f"{ss_prefix}: missing '{num_field}'.")
+                elif not isinstance(val, (int, float)):
+                    errors.append(f"{ss_prefix}: '{num_field}' must be a number, got {val!r}.")
+    return errors
+
+
 def _historical_rates(historical_data: str) -> dict[str, float]:
   
     totals: dict[str, list[float]] = {}
@@ -374,7 +417,7 @@ def generate_section2(project: ProjectData, language: str = "en", user_prompt: s
         desc_prompt += f"\n\nAdditional instructions: {user_prompt.strip()}"
     description_text = llm.invoke(desc_prompt).strip()
 
-    # --- Short description (single sentence for Excel header) ---
+   
     short_desc_template = _SHORT_DESC_PROMPT_FI if is_fi else _SHORT_DESC_PROMPT
     short_desc_kwargs = dict(
         project_name=project.project_name or ("Uusi projekti" if is_fi else "New Project"),
@@ -383,8 +426,7 @@ def generate_section2(project: ProjectData, language: str = "en", user_prompt: s
     )
     short_description = llm.invoke(short_desc_template.format(**short_desc_kwargs)).strip()
 
-    # Derive hourly rates exclusively from historical data.
-    # CATEGORY_RATES is used only when the cost_history collection is empty.
+ 
     fallback_rates = _historical_rates(historical_data)
     if fallback_rates:
         _rate_lines = [
@@ -396,13 +438,12 @@ def generate_section2(project: ProjectData, language: str = "en", user_prompt: s
         ]
         _categories_str = "\n".join(_rate_lines) or "  (Derive rates directly from the historical phases above)"
     else:
-        # No historical data ingested yet — show defaults so the LLM can still produce numbers
+       
         _categories_str = "\n".join(
             f"  - {cat}: {CATEGORY_RATES[cat]}€/h (default — add historical cost data for real rates)"
             for cat in WORK_CATEGORIES
         )
 
-    # --- Step 2: Generate structured cost estimate ---
     est_kwargs = dict(
         project_name=project.project_name or ("Uusi projekti" if is_fi else "New Project"),
         description=f"{project.goals} {project.constraints}",
@@ -421,52 +462,81 @@ def generate_section2(project: ProjectData, language: str = "en", user_prompt: s
         est_prompt += "\n\nTÄRKEÄÄ: Kaikki JSON:n tekstikentät (name, output, alivaiheen name) TÄYTYY kirjoittaa suomeksi, riippumatta historiallisen datan kielestä."
     if user_prompt and user_prompt.strip():
         est_prompt += f"\n\nAdditional instructions: {user_prompt.strip()}"
-    raw = llm.invoke(est_prompt)
-    cleaned = _clean_json(raw)
 
+   
     step_groups: list[CostStepGroup] = []
-    try:
-        parsed = json.loads(cleaned)
-        # LLM sometimes wraps the array: {"steps": [...]} or {"cost_steps": [...]}
-        if isinstance(parsed, dict):
-            parsed = next(
-                (v for v in parsed.values() if isinstance(v, list)),
-                []
-            )
-        step_list = parsed if isinstance(parsed, list) else []
-        for i, s in enumerate(step_list):
-            if not isinstance(s, dict):
-                continue
-            try:
-                sub_steps: list[CostSubStep] = []
-                for ss in s.get("sub_steps", []):
-                    if not isinstance(ss, dict):
-                        continue
-                    try:
-                        sub_steps.append(CostSubStep(
-                            name=str(ss.get("name", "")),
-                            category=str(ss.get("category", "Service development")),
-                            hourly_rate=float(ss.get("hourly_rate", 0)),
-                            hours=float(ss.get("hours", 0)),
-                            persons=int(ss.get("persons", 1)),
-                        ))
-                    except Exception:
-                        continue
-                raw_id = str(s.get("step_id", "")).strip()
-                step_id = raw_id if raw_id else f"STEP {i+1}"
-                step_groups.append(CostStepGroup(
-                    step_id=step_id,
-                    name=str(s.get("name", "")),
-                    output=str(s.get("output", "")),
-                    sub_steps=sub_steps,
-                ))
-            except Exception:
-                continue
-    except json.JSONDecodeError as e:
-        logger.error(
-            "section2 JSON parse failed: %s\nRaw response (first 500 chars): %s",
-            e, cleaned[:500]
+    active_prompt = est_prompt
+    for attempt in range(1, _MAX_EST_RETRIES + 1):
+        raw = llm.invoke(active_prompt)
+        cleaned = _clean_json(raw)
+
+        parsed: object = None
+        parse_error: str | None = None
+        try:
+            parsed = json.loads(cleaned)
+            
+            if isinstance(parsed, dict):
+                parsed = next(
+                    (v for v in parsed.values() if isinstance(v, list)),
+                    parsed,
+                )
+        except json.JSONDecodeError as e:
+            parse_error = f"JSON parse error: {e}. Raw text (first 300 chars): {cleaned[:300]}"
+
+        validation_errors = [parse_error] if parse_error else _validate_step_list(parsed)
+
+        if not validation_errors:
+            # Valid — build the dataclass objects
+            for i, s in enumerate(parsed):  
+                if not isinstance(s, dict):
+                    continue
+                try:
+                    sub_steps: list[CostSubStep] = []
+                    for ss in s.get("sub_steps", []):
+                        if not isinstance(ss, dict):
+                            continue
+                        try:
+                            sub_steps.append(CostSubStep(
+                                name=str(ss.get("name", "")),
+                                category=str(ss.get("category", "Service development")),
+                                hourly_rate=float(ss.get("hourly_rate", 0)),
+                                hours=float(ss.get("hours", 0)),
+                                persons=int(ss.get("persons", 1)),
+                            ))
+                        except Exception:
+                            continue
+                    raw_id = str(s.get("step_id", "")).strip()
+                    step_id = raw_id if raw_id else f"STEP {i+1}"
+                    step_groups.append(CostStepGroup(
+                        step_id=step_id,
+                        name=str(s.get("name", "")),
+                        output=str(s.get("output", "")),
+                        sub_steps=sub_steps,
+                    ))
+                except Exception:
+                    continue
+            break  # success — exit retry loop
+
+        # Validation failed — log and inject error feedback for the next attempt
+        error_summary = "; ".join(str(e) for e in validation_errors)
+        logger.warning(
+            "section2 estimation attempt %d/%d failed validation: %s",
+            attempt, _MAX_EST_RETRIES, error_summary,
         )
+        if attempt < _MAX_EST_RETRIES:
+            active_prompt = (
+                active_prompt
+                + f"\n\nPREVIOUS ATTEMPT PRODUCED INVALID JSON (attempt {attempt}):\n"
+                + "\n".join(f"  - {e}" for e in validation_errors)
+                + "\n\nFix ALL of the errors above and return ONLY the corrected JSON array. "
+                "No explanation, no markdown fences."
+            )
+        else:
+            logger.error(
+                "section2 estimation failed all %d attempts. Last errors: %s\n"
+                "Raw response (first 500 chars): %s",
+                _MAX_EST_RETRIES, error_summary, cleaned[:500],
+            )
 
     grand_total = round(sum(sg.total_cost for sg in step_groups), 2)
 

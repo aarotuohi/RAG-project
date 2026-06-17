@@ -11,6 +11,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.output_parsers import StrOutputParser
 
 from backend.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, ANTHROPIC_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_MAX_TOKENS
+import backend.config as _cfg
 
 
 def _get_available_ram_gb() -> float:
@@ -127,14 +128,25 @@ def is_anthropic_reachable() -> tuple[bool, str]:
 
 def get_llm(**kwargs):
     global _llm
-    if _llm is None:
-        _llm = ChatAnthropic(
-            model=ANTHROPIC_MODEL,
+    # Rebuild if the active model changed since the last call
+    current_model = _cfg._active_anthropic_model
+    if _llm is None or getattr(_llm, "_aisales_model", None) != current_model:
+        chain = ChatAnthropic(
+            model=current_model,
             api_key=ANTHROPIC_API_KEY,
             temperature=0.2,
             max_tokens=ANTHROPIC_MAX_TOKENS,
         ) | StrOutputParser()
+        chain._aisales_model = current_model  # type: ignore[attr-defined]
+        _llm = chain
     return _llm
+
+
+def set_active_model(model_id: str) -> None:
+    """Switch the active Anthropic model at runtime and invalidate the cached LLM."""
+    global _llm
+    _cfg._active_anthropic_model = model_id
+    _llm = None  # force rebuild on next get_llm() call
 
 
 def get_embeddings() -> OllamaEmbeddings:
