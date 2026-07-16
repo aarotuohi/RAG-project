@@ -8,11 +8,12 @@ import datetime
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, File as FastAPIFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File as FastAPIFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import json
 
+from backend.auth import require_auth
 from backend.chains.extraction_chain import extract_from_file, ProjectData, project_data_to_dict
 from backend.generator.offer_generator import generate_offer, regenerate_section
 from backend.vectorstore.chroma_client import collection_count
@@ -81,7 +82,9 @@ def _get_transcript_dir() -> Path:
             return p
     return TRANSCRIPTS_DIR
 
-router = APIRouter(prefix="/api")
+# require_auth runs on every route; raises HTTP 401 when token is invalid.
+# When AUTH_ENABLED is False (Azure AD not configured) it is a no-op.
+router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)])
 
 
 

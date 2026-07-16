@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { t, type Lang } from '../i18n'
+import { apiFetch } from '../auth/apiFetch'
 
 interface OfferMeta {
   customer_name?: string
@@ -54,7 +55,7 @@ export default function OutputsTab({ lang, isActive }: Props) {
 
   const fetchOutputs = () => {
     setLoading(true)
-    fetch('/api/outputs')
+    apiFetch('/api/outputs')
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then(data => setFiles(Array.isArray(data) ? data : []))
       .catch(() => setFiles([]))
@@ -70,7 +71,7 @@ export default function OutputsTab({ lang, isActive }: Props) {
   const deleteFile = async (file: OutputFile) => {
     if (!confirm(`${t('confirm_delete', lang)} "${file.name}"?`)) return
     try {
-      const r = await fetch('/api/delete-output', {
+      const r = await apiFetch('/api/delete-output', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: file.path }),

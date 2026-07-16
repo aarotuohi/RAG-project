@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useIsAuthenticated, useMsal } from '@azure/msal-react'
 import NewOfferTab from './tabs/NewOfferTab'
 import OutputsTab from './tabs/OutputsTab'
+import LoginPage from './components/LoginPage'
 import { t, type Lang } from './i18n'
+import { AUTH_CONFIGURED, API_SCOPES } from './authConfig'
+import { apiFetch, setTokenGetter } from './auth/apiFetch'
 
 type Tab = 'new-offer' | 'outputs'
 
@@ -25,8 +29,25 @@ export default function App() {
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('aisales_lang') as Lang) || 'en')
   const [activeModel, setActiveModel] = useState<string>('')
 
+  const isAuthenticated = useIsAuthenticated()
+  const { instance, accounts } = useMsal()
+
+  // Register the token getter so apiFetch can silently acquire fresh tokens.
+  useEffect(() => {
+    if (!AUTH_CONFIGURED) return
+    setTokenGetter(async () => {
+      const account = accounts[0]
+      if (!account) return null
+      const result = await instance.acquireTokenSilent({ scopes: API_SCOPES, account })
+      return result.accessToken
+    })
+  }, [instance, accounts])
+
+  // Only start polling once authenticated (or when auth is not configured).
+  const canFetch = !AUTH_CONFIGURED || isAuthenticated
+
   const fetchStatus = () => {
-    fetch('/api/status')
+    apiFetch('/api/status')
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then(data => {
         if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -38,10 +59,11 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (!canFetch) return
     fetchStatus()
     const interval = setInterval(fetchStatus, 10_000)
     return () => clearInterval(interval)
-  }, [])
+  }, [canFetch])
 
   const toggleLang = () => {
     const next: Lang = lang === 'en' ? 'fi' : 'en'
@@ -53,7 +75,7 @@ export default function App() {
 
   const handleModelChange = (modelId: string) => {
     setActiveModel(modelId)
-    fetch('/api/set-model', {
+    apiFetch('/api/set-model', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model_id: modelId }),
@@ -63,6 +85,15 @@ export default function App() {
   const tabLabels: Record<Tab, string> = {
     'new-offer': t('nav_new_offer', lang),
     'outputs':   t('nav_outputs', lang),
+  }
+
+  // Show login page when auth is configured but the user is not signed in.
+  if (AUTH_CONFIGURED && !isAuthenticated) {
+    return <LoginPage />
+  }
+
+  const handleLogout = () => {
+    instance.logoutPopup({ postLogoutRedirectUri: window.location.origin })
   }
 
   return (
@@ -124,6 +155,30 @@ export default function App() {
           >
             {lang === 'en' ? 'FI' : 'EN'}
           </button>
+          {AUTH_CONFIGURED && isAuthenticated && (
+            <>
+              <span style={{ marginLeft: 12, fontSize: 12, color: '#6b7280', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {accounts[0]?.username ?? accounts[0]?.name ?? ''}
+              </span>
+              <button
+                onClick={handleLogout}
+                style={{
+                  marginLeft: 8,
+                  padding: '3px 10px',
+                  borderRadius: 6,
+                  border: '1px solid #d1d5db',
+                  background: '#f9fafb',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: '#374151',
+                }}
+                title="Sign out"
+              >
+                Sign out
+              </button>
+            </>
+          )}
         </div>
       </nav>
       <main className="content">

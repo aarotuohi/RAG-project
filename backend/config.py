@@ -77,6 +77,20 @@ CATEGORY_RATES: dict[str, int] = {
     "Industrial design":    90,
 }
 
+# ── Azure AD authentication ───────────────────────────────────────────────────
+# Set these in .env to enable Microsoft login.
+# Leave blank to run without authentication (local/dev mode).
+AZURE_AD_TENANT_ID = os.environ.get("AZURE_AD_TENANT_ID", "")
+AZURE_AD_CLIENT_ID = os.environ.get("AZURE_AD_CLIENT_ID", "")
+# Audience must match the Application ID URI exposed in your app registration.
+# Default: api://<clientId>  (set after exposing "access_as_user" scope)
+AZURE_AD_AUDIENCE  = os.environ.get(
+    "AZURE_AD_AUDIENCE",
+    f"api://{os.environ.get('AZURE_AD_CLIENT_ID', '')}",
+)
+# Auth is active only when both tenant and client IDs are provided.
+AUTH_ENABLED = bool(AZURE_AD_TENANT_ID and AZURE_AD_CLIENT_ID)
+
 #Boilerplate filenames (inside BOILERPLATE_DIR) — one file per key per language.
 # Lookup order: language-specific file first, then "en" fallback, then bare filename.
 BOILERPLATE_FILES: dict[str, dict[str, str]] = {

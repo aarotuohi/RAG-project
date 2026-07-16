@@ -1,5 +1,6 @@
 import { useState, useRef, Fragment, useEffect } from 'react'
 import { t, type Lang } from '../i18n'
+import { apiFetch } from '../auth/apiFetch'
 
 const REGENERATABLE_SECTIONS = new Set([
   'thank_you', 'section1', 'section2', 'section3', 'section4', 'section5', 'section8',
@@ -284,7 +285,7 @@ export default function NewOfferTab({ lang }: Props) {
   const selectFile = async () => {
     setPickingFile(true)
     try {
-      const r = await fetch('/api/open-file-dialog')
+      const r = await apiFetch('/api/open-file-dialog')
       const d = await r.json()
       if (d.path) {
         setSelectedPath(d.path)
@@ -315,7 +316,7 @@ export default function NewOfferTab({ lang }: Props) {
     try {
       const form = new FormData()
       form.append('file', file, file.name)
-      const r = await fetch('/api/upload-transcript', { method: 'POST', body: form })
+      const r = await apiFetch('/api/upload-transcript', { method: 'POST', body: form })
       if (!r.ok) throw new Error()
       const d = await r.json()
       setSelectedPath(d.path)
@@ -330,7 +331,7 @@ export default function NewOfferTab({ lang }: Props) {
     setExtracting(true)
     setExtractError('')
     try {
-      const r = await fetch('/api/extract-path', {
+      const r = await apiFetch('/api/extract-path', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ file_path: filePath }),
@@ -361,7 +362,7 @@ export default function NewOfferTab({ lang }: Props) {
     setStep('generating')
 
     try {
-      const resp = await fetch('/api/generate', {
+      const resp = await apiFetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project, enable_web_search: webSearch, export_pdf: exportPdf, generate_cost_table: costTable, document_language: documentLanguage }),
@@ -438,7 +439,7 @@ export default function NewOfferTab({ lang }: Props) {
     setRegenErrors(prev => { const n = { ...prev }; delete n[sectionKey]; return n })
     setRegenResults(prev => { const n = { ...prev }; delete n[sectionKey]; return n })
     try {
-      const resp = await fetch('/api/regenerate-section', {
+      const resp = await apiFetch('/api/regenerate-section', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -504,7 +505,7 @@ export default function NewOfferTab({ lang }: Props) {
     setTestResult(null)
     setTestError('')
     try {
-      const r = await fetch('/api/test-generate', {
+      const r = await apiFetch('/api/test-generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ section, project, enable_web_search: webSearch, document_language: documentLanguage }),
