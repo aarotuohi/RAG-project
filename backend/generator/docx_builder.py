@@ -272,6 +272,7 @@ def build_offer_document(
     sections: dict,
     salesperson_contact: dict | None = None,
     language: str = "en",
+    output_dir: Path | None = None,
 ) -> Path:
     """
     Build the complete offer .docx file.
@@ -451,8 +452,9 @@ def build_offer_document(
         doc.add_paragraph(att, style="List Number")
 
     # ── Save ──────────────────────────────────────────────────────────────────
-    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    save_dir = output_dir if output_dir is not None else OUTPUTS_DIR
+    save_dir.mkdir(parents=True, exist_ok=True)
     safe_project = (project.project_name or "offer").replace(" ", "_").replace("/", "-")[:40]
-    out_path = OUTPUTS_DIR / f"offer_{safe_project}_{doc_date}.docx"
+    out_path = save_dir / f"offer_{safe_project}_{doc_date}.docx"
     doc.save(str(out_path))
     return out_path

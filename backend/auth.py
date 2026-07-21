@@ -1,79 +1,144 @@
 """
-Microsoft Entra ID (Azure AD) JWT authentication for FastAPI.
+Local JWT authentication for FastAPI.
 
-Validates RS256-signed access tokens issued by the v2.0 token endpoint.
-Frontend acquisition flow: Authorization Code + PKCE via MSAL (no client secret).
+Uses HS256-signed tokens issued by this server and bcrypt password hashing.
+No external Identity Provider required.
 
 Security notes:
-  - Token signature is verified against Microsoft's public JWKS (fetched once,
-    cached 24 h, refreshed on unknown key-id for seamless key rotation).
-  - Checks: RS256 alg, audience, issuer, exp, nbf.
-  - AUTH_ENABLED is False when AZURE_AD_TENANT_ID / AZURE_AD_CLIENT_ID are not
-    configured — allows local-only runs without Azure AD.
+  - Passwords are hashed with bcrypt (cost factor 12).
+  - Tokens are HS256-signed with JWT_SECRET from environment.
+  - Login is rate-limited per username (5 attempts per 5 minutes).
+  - Constant-time bcrypt verification prevents timing-based user enumeration.
+  - AUTH_ENABLED is False when JWT_SECRET is not configured — allows
+    local-only runs without authentication.
 """
 from __future__ import annotations
 
 import logging
+import sqlite3
 import time
+import uuid
 from typing import Annotated
 
-import httpx
 import jwt
-from jwt.algorithms import RSAAlgorithm
+from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from backend.config import AZURE_AD_TENANT_ID, AZURE_AD_AUDIENCE, AUTH_ENABLED
+from backend.config import JWT_SECRET, JWT_EXPIRE_SECONDS, AUTH_ENABLED, DB_PATH
 
 logger = logging.getLogger(__name__)
 
-_JWKS_URL = (
-    f"https://login.microsoftonline.com/{AZURE_AD_TENANT_ID}/discovery/v2.0/keys"
-)
-_ISSUER = (
-    f"https://login.microsoftonline.com/{AZURE_AD_TENANT_ID}/v2.0"
-)
-
 _bearer = HTTPBearer(auto_error=True)
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
-# ── JWKS cache ────────────────────────────────────────────────────────────────
-# Tuple of ({kid: public_key}, fetched_at_monotonic).
-# Keys are cached for 24 h and refreshed whenever an unknown kid is encountered
-# (handles Microsoft's periodic key rotation transparently).
-_jwks_cache: tuple[dict, float] | None = None
-_JWKS_TTL = 86_400.0  # 24 hours
+# ── Database ──────────────────────────────────────────────────────────────────
+
+def _get_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
-def _fetch_jwks() -> dict:
-    """Fetch JWKS from Microsoft and return a {kid: RSA public key} mapping."""
-    resp = httpx.get(_JWKS_URL, timeout=10)
-    resp.raise_for_status()
-    return {
-        k["kid"]: RSAAlgorithm.from_jwk(k)
-        for k in resp.json().get("keys", [])
+def init_db() -> None:
+    """Create the users table if it does not yet exist."""
+    with _get_conn() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id            TEXT PRIMARY KEY,
+                username      TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                is_admin      INTEGER NOT NULL DEFAULT 0,
+                created_at    REAL NOT NULL
+            )
+        """)
+
+
+# ── Password helpers ──────────────────────────────────────────────────────────
+
+def hash_password(plain: str) -> str:
+    return _pwd_ctx.hash(plain)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return _pwd_ctx.verify(plain, hashed)
+
+
+# ── User CRUD ─────────────────────────────────────────────────────────────────
+
+def get_user_by_username(username: str) -> sqlite3.Row | None:
+    with _get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM users WHERE username = ?", (username.strip().lower(),)
+        ).fetchone()
+
+
+def validate_password_strength(password: str) -> None:
+    """Raise HTTPException 400 if the password does not meet requirements."""
+    if len(password) < 10:
+        raise HTTPException(status_code=400, detail="Password must be at least 10 characters")
+    if not any(c.isupper() for c in password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
+    if not any(c.isdigit() for c in password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one digit")
+
+
+def create_user(username: str, plain_password: str, is_admin: bool = False) -> str:
+    """Hash the password and insert a new user row. Returns the new user id."""
+    validate_password_strength(plain_password)
+    uid = str(uuid.uuid4())
+    hashed = hash_password(plain_password)
+    try:
+        with _get_conn() as conn:
+            conn.execute(
+                "INSERT INTO users (id, username, password_hash, is_admin, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (uid, username.strip().lower(), hashed, int(is_admin), time.time()),
+            )
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="Username already exists")
+    return uid
+
+
+# ── JWT helpers ───────────────────────────────────────────────────────────────
+
+def create_access_token(user_id: str, username: str, is_admin: bool) -> str:
+    now = int(time.time())
+    payload = {
+        "sub":      user_id,
+        "username": username,
+        "is_admin": is_admin,
+        "iat":      now,
+        "exp":      now + JWT_EXPIRE_SECONDS,
     }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
-def _get_signing_key(kid: str):
-    """
-    Return the RSA public key for *kid*.
-    Uses the cache when fresh; re-fetches on miss or expiry (key rotation).
-    """
-    global _jwks_cache
-    now = time.monotonic()
-
-    if _jwks_cache and now - _jwks_cache[1] < _JWKS_TTL:
-        key = _jwks_cache[0].get(kid)
-        if key is not None:
-            return key
-        # kid not in cache — might be a new key; fall through to re-fetch once
-
-    keys = _fetch_jwks()
-    _jwks_cache = (keys, now)
-    return keys.get(kid)
+# ── Login rate limiting (in-memory, per username) ────────────────────────────
+_login_attempts: dict[str, tuple[int, float]] = {}  # username -> (count, window_start)
+_MAX_ATTEMPTS   = 5
+_WINDOW_SECONDS = 300  # 5 minutes
 
 
-# ── FastAPI dependency ────────────────────────────────────────────────────────
+def check_rate_limit(username: str) -> None:
+    now = time.time()
+    count, window_start = _login_attempts.get(username, (0, now))
+    if now - window_start > _WINDOW_SECONDS:
+        _login_attempts[username] = (1, now)
+        return
+    if count >= _MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please wait 5 minutes.",
+        )
+    _login_attempts[username] = (count + 1, window_start)
+
+
+def reset_rate_limit(username: str) -> None:
+    _login_attempts.pop(username, None)
+
+
+# ── FastAPI dependencies ──────────────────────────────────────────────────────
 
 def require_auth(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
@@ -82,41 +147,25 @@ def require_auth(
     FastAPI dependency — validates the Bearer JWT and returns its decoded claims.
 
     Raises HTTP 401 for missing, expired, or invalid tokens.
-    When AUTH_ENABLED is False (no Azure AD vars set) the check is skipped and
-    an empty claims dict is returned so local development still works.
+    When AUTH_ENABLED is False (JWT_SECRET not configured) the check is skipped
+    and a dev-mode claims dict is returned so local development still works.
     """
     if not AUTH_ENABLED:
-        return {}
+        return {"sub": "dev", "username": "dev", "is_admin": True}
 
     token = credentials.credentials
     try:
-        header = jwt.get_unverified_header(token)
-        kid = header.get("kid", "")
-        key = _get_signing_key(kid)
-
-        if key is None:
-            raise jwt.InvalidKeyError(f"No JWKS key found for kid={kid!r}")
-
         claims: dict = jwt.decode(
             token,
-            key=key,
-            algorithms=["RS256"],
-            audience=AZURE_AD_AUDIENCE,
-            issuer=_ISSUER,
-            options={"verify_exp": True, "verify_nbf": True},
+            JWT_SECRET,
+            algorithms=["HS256"],
+            options={"verify_exp": True},
         )
         return claims
-
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidAudienceError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token audience mismatch — ensure AZURE_AD_AUDIENCE matches your app registration",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except jwt.InvalidTokenError as exc:
@@ -125,9 +174,10 @@ def require_auth(
             detail=f"Invalid token: {exc}",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except httpx.HTTPError as exc:
-        logger.error("JWKS fetch failed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to verify authentication token (JWKS fetch failed)",
-        )
+
+
+def require_admin(claims: Annotated[dict, Depends(require_auth)]) -> dict:
+    """Extends require_auth — additionally asserts the caller is an admin."""
+    if not claims.get("is_admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    return claims

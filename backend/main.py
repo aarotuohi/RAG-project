@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.routes.api import router
+from backend.routes.auth_routes import router as auth_router
 from backend.ollama_client import ensure_ollama_running
 from backend.ingestion.ingestion_queue import start_worker
 import backend.config as cfg
@@ -66,6 +67,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
+app.include_router(auth_router)
 app.include_router(router)
 
 # Serve the compiled React frontend — run `npm run build` in /frontend first

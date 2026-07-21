@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useIsAuthenticated, useMsal } from '@azure/msal-react'
+import { useAuth } from './auth/AuthContext'
 import NewOfferTab from './tabs/NewOfferTab'
 import OutputsTab from './tabs/OutputsTab'
 import LoginPage from './components/LoginPage'
 import { t, type Lang } from './i18n'
-import { AUTH_CONFIGURED, API_SCOPES } from './authConfig'
-import { apiFetch, setTokenGetter } from './auth/apiFetch'
+import { AUTH_CONFIGURED } from './authConfig'
+import { apiFetch } from './auth/apiFetch'
 
 type Tab = 'new-offer' | 'outputs'
 
@@ -29,19 +29,7 @@ export default function App() {
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('aisales_lang') as Lang) || 'en')
   const [activeModel, setActiveModel] = useState<string>('')
 
-  const isAuthenticated = useIsAuthenticated()
-  const { instance, accounts } = useMsal()
-
-  // Register the token getter so apiFetch can silently acquire fresh tokens.
-  useEffect(() => {
-    if (!AUTH_CONFIGURED) return
-    setTokenGetter(async () => {
-      const account = accounts[0]
-      if (!account) return null
-      const result = await instance.acquireTokenSilent({ scopes: API_SCOPES, account })
-      return result.accessToken
-    })
-  }, [instance, accounts])
+  const { isAuthenticated, username, logout } = useAuth()
 
   // Only start polling once authenticated (or when auth is not configured).
   const canFetch = !AUTH_CONFIGURED || isAuthenticated
@@ -90,10 +78,6 @@ export default function App() {
   // Show login page when auth is configured but the user is not signed in.
   if (AUTH_CONFIGURED && !isAuthenticated) {
     return <LoginPage />
-  }
-
-  const handleLogout = () => {
-    instance.logoutPopup({ postLogoutRedirectUri: window.location.origin })
   }
 
   return (
@@ -158,10 +142,10 @@ export default function App() {
           {AUTH_CONFIGURED && isAuthenticated && (
             <>
               <span style={{ marginLeft: 12, fontSize: 12, color: '#6b7280', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {accounts[0]?.username ?? accounts[0]?.name ?? ''}
+                {username ?? ''}
               </span>
               <button
-                onClick={handleLogout}
+                onClick={logout}
                 style={{
                   marginLeft: 8,
                   padding: '3px 10px',
@@ -194,3 +178,4 @@ export default function App() {
     </div>
   )
 }
+

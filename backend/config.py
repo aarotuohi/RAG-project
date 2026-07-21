@@ -77,19 +77,18 @@ CATEGORY_RATES: dict[str, int] = {
     "Industrial design":    90,
 }
 
-# ── Azure AD authentication ───────────────────────────────────────────────────
-# Set these in .env to enable Microsoft login.
+# ── Local JWT authentication ──────────────────────────────────────────────────
+# Set JWT_SECRET in .env to enable authentication.
 # Leave blank to run without authentication (local/dev mode).
-AZURE_AD_TENANT_ID = os.environ.get("AZURE_AD_TENANT_ID", "")
-AZURE_AD_CLIENT_ID = os.environ.get("AZURE_AD_CLIENT_ID", "")
-# Audience must match the Application ID URI exposed in your app registration.
-# Default: api://<clientId>  (set after exposing "access_as_user" scope)
-AZURE_AD_AUDIENCE  = os.environ.get(
-    "AZURE_AD_AUDIENCE",
-    f"api://{os.environ.get('AZURE_AD_CLIENT_ID', '')}",
-)
-# Auth is active only when both tenant and client IDs are provided.
-AUTH_ENABLED = bool(AZURE_AD_TENANT_ID and AZURE_AD_CLIENT_ID)
+# Generate a strong secret with: python -c "import secrets; print(secrets.token_hex(32))"
+JWT_SECRET         = os.environ.get("JWT_SECRET", "")
+JWT_EXPIRE_SECONDS = int(os.environ.get("JWT_EXPIRE_SECONDS", str(8 * 3600)))  # 8 hours default
+
+# User database (SQLite) stored inside the data directory.
+DB_PATH = BASE_DIR / "users.db"
+
+# Auth is active only when JWT_SECRET is provided.
+AUTH_ENABLED = bool(JWT_SECRET)
 
 #Boilerplate filenames (inside BOILERPLATE_DIR) — one file per key per language.
 # Lookup order: language-specific file first, then "en" fallback, then bare filename.

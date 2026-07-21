@@ -128,7 +128,7 @@ _STRINGS: dict[str, dict[str, str]] = {
 
 
 def build_cost_excel(project: ProjectData, section2: dict,
-                     language: str = "fi") -> Path:
+                     language: str = "fi", output_dir: Path | None = None) -> Path:
     """
     Build a laskentapohja-style Excel workbook from project info and section2
     cost data.  Saves to OUTPUTS_DIR and returns the file path.
@@ -354,14 +354,15 @@ def build_cost_excel(project: ProjectData, section2: dict,
     ws.print_title_rows = "1:7"   
 
     # ── Save ──────────────────────────────────────────────────────────────────
-    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    save_dir = output_dir if output_dir is not None else OUTPUTS_DIR
+    save_dir.mkdir(parents=True, exist_ok=True)
     stem = (project.project_name or "offer").replace(" ", "_")[:40]
-    out_path = OUTPUTS_DIR / f"{stem}_cost_table.xlsx"
+    out_path = save_dir / f"{stem}_cost_table.xlsx"
 
     # Avoid overwriting
     counter = 1
     while out_path.exists():
-        out_path = OUTPUTS_DIR / f"{stem}_cost_table_{counter}.xlsx"
+        out_path = save_dir / f"{stem}_cost_table_{counter}.xlsx"
         counter += 1
 
     wb.save(str(out_path))

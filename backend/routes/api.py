@@ -35,6 +35,35 @@ _gen_sem     = asyncio.Semaphore(1)
 _extract_sem = asyncio.Semaphore(2)
 
 
+def _safe_user_id(user_id: str) -> str:
+    """Return a filesystem-safe, non-traversable string from a user_id (UUID)."""
+    import re
+    # Allow only alphanumeric chars and hyphens (UUID format); fall back to 'unknown'
+    clean = re.sub(r'[^a-zA-Z0-9\-]', '', user_id)[:64]
+    return clean or "unknown"
+
+
+def _user_output_dir(claims: dict) -> Path:
+    """Return (and create) OUTPUTS_DIR/{user_id} for the authenticated user."""
+    uid = _safe_user_id(claims.get("sub", "anonymous"))
+    d = OUTPUTS_DIR / uid
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _user_transcript_dir(claims: dict) -> Path:
+    """Return (and create) TRANSCRIPTS_DIR/{user_id} for the authenticated user."""
+    settings_custom = _load_settings().get("transcript_folder", "")
+    if settings_custom:
+        p = Path(settings_custom)
+        if p.is_dir():
+            return p
+    uid = _safe_user_id(claims.get("sub", "anonymous"))
+    d = TRANSCRIPTS_DIR / uid
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _write_offer_meta(
     project: ProjectData,
     done_event: dict,
@@ -74,7 +103,7 @@ def _load_settings() -> dict:
 
 
 def _get_transcript_dir() -> Path:
-    """Return the active transcript folder (custom or default)."""
+    """Return the active transcript folder (custom or default). Used as a fallback."""
     custom = _load_settings().get("transcript_folder", "")
     if custom:
         p = Path(custom)
@@ -156,9 +185,12 @@ def set_model(req: SetModelRequest):
 
 # ── Transcript Extraction ─────────────────────────────────────────────────────
 @router.post("/upload-transcript")
-async def upload_transcript(file: UploadFile = FastAPIFile(...)):
-    """Save an uploaded transcript file to TRANSCRIPTS_DIR and return its path."""
-    dest = _get_transcript_dir() / (file.filename or "transcript.txt")
+async def upload_transcript(
+    file: UploadFile = FastAPIFile(...),
+    claims: dict = Depends(require_auth),
+):
+    """Save an uploaded transcript file to the user's TRANSCRIPTS_DIR and return its path."""
+    dest = _user_transcript_dir(claims) / (file.filename or "transcript.txt")
     # If a file with the same name already exists, don't overwrite
     stem = dest.stem
     suffix = dest.suffix
@@ -202,7 +234,7 @@ class GenerateRequest(BaseModel):
 
 
 @router.post("/generate")
-async def generate(req: GenerateRequest):
+async def generate(req: GenerateRequest, claims: dict = Depends(require_auth)):
     """Generate the full offer document. Returns a streaming NDJSON response with progress events."""
     if _gen_sem.locked():
         raise HTTPException(
@@ -214,11 +246,12 @@ async def generate(req: GenerateRequest):
     await _gen_sem.acquire()
 
     project = ProjectData(**{k: v for k, v in req.project.items() if k in ProjectData.__dataclass_fields__})
+    user_out_dir = _user_output_dir(claims)
 
     async def event_stream():
         _stats_log: dict[str, dict] = {}
         try:
-            async for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.generate_cost_table, req.document_language):
+            async for event in generate_offer(project, req.enable_web_search, req.export_pdf, req.generate_cost_table, req.document_language, output_dir=user_out_dir):
                 if event.get("status") == "stats":
                     _stats_log[event["section"]] = {
                         "elapsed_s": event.get("elapsed_s", 0),
@@ -258,7 +291,7 @@ class RegenerateSectionRequest(BaseModel):
 
 
 @router.post("/regenerate-section")
-async def regenerate_section_endpoint(req: RegenerateSectionRequest):
+async def regenerate_section_endpoint(req: RegenerateSectionRequest, claims: dict = Depends(require_auth)):
     """Re-run a single section and stream the result as NDJSON."""
     if req.section_key not in _REGENERATABLE_SECTIONS:
         raise HTTPException(
@@ -347,24 +380,26 @@ async def regenerate_section_endpoint(req: RegenerateSectionRequest):
 # ── File Download & Listing ───────────────────────────────────────────────────
 
 @router.get("/download")
-def download_file(path: str):
-    """Download a generated offer file. Only files inside OUTPUTS_DIR are allowed."""
+def download_file(path: str, claims: dict = Depends(require_auth)):
+    """Download a generated offer file. Only files inside the user's output directory are allowed."""
     file_path = Path(path)
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
+    user_out_dir = _user_output_dir(claims)
     try:
-        file_path.resolve().relative_to(OUTPUTS_DIR.resolve())
+        file_path.resolve().relative_to(user_out_dir.resolve())
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied")
     return FileResponse(str(file_path), filename=file_path.name)
 
 
 @router.get("/outputs")
-def list_outputs():
-    """List all generated offer files, enriched with sidecar metadata where available."""
+def list_outputs(claims: dict = Depends(require_auth)):
+    """List generated offer files belonging to the authenticated user."""
     _VISIBLE = {'.docx', '.pdf', '.xlsx'}
     files = []
-    for f in OUTPUTS_DIR.iterdir():
+    user_out_dir = _user_output_dir(claims)
+    for f in user_out_dir.iterdir():
         if not f.is_file() or f.suffix not in _VISIBLE:
             continue
         entry: dict = {"name": f.name, "path": str(f), "size": f.stat().st_size}
@@ -384,13 +419,14 @@ class DeleteRequest(BaseModel):
 
 
 @router.post("/delete-output")
-def delete_output(req: DeleteRequest):
-    """Delete a generated offer file. Only files inside OUTPUTS_DIR are allowed."""
+def delete_output(req: DeleteRequest, claims: dict = Depends(require_auth)):
+    """Delete a generated offer file. Only files inside the user's output directory are allowed."""
     file_path = Path(req.path)
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
+    user_out_dir = _user_output_dir(claims)
     try:
-        file_path.resolve().relative_to(OUTPUTS_DIR.resolve())
+        file_path.resolve().relative_to(user_out_dir.resolve())
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied")
     file_path.unlink()

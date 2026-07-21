@@ -122,6 +122,7 @@ async def generate_offer(
     export_pdf: bool = True,
     generate_cost_table: bool = True,
     language: str = "en",
+    output_dir: Path | None = None,
 ) -> AsyncIterator[dict]:
     """
     Async generator that yields progress dicts and finally yields result paths.
@@ -220,7 +221,7 @@ async def generate_offer(
         _current_section = "docx"
         yield {"status": "progress", "section": "docx", "message": "Assembling DOCX document…"}
         _t0 = time.time()
-        docx_path = await asyncio.to_thread(build_offer_document, project, sections, language=language)
+        docx_path = await asyncio.to_thread(build_offer_document, project, sections, language=language, output_dir=output_dir)
         yield {"status": "stats", "section": "docx", "elapsed_s": round(time.time() - _t0, 1), "tokens": 0}
 
         # Save sections cache alongside the DOCX so individual sections can be
@@ -237,7 +238,7 @@ async def generate_offer(
         xlsx_path = None
         if generate_cost_table:
             try:
-                xlsx_path = build_cost_excel(project, sections["section2"], language=language)
+                xlsx_path = build_cost_excel(project, sections["section2"], language=language, output_dir=output_dir)
             except Exception as e:
                 yield {"status": "warning", "section": "docx", "message": f"Excel export failed: {e}"}
 
@@ -355,8 +356,8 @@ def rebuild_offer_from_section(
 
     sections[sections_key] = new_val
 
-    # Rebuild DOCX
-    new_docx_path = build_offer_document(project, sections, language=language)
+    # Rebuild DOCX — save alongside the original file (stays in the user's output dir)
+    new_docx_path = build_offer_document(project, sections, language=language, output_dir=docx_path.parent)
 
     # Persist updated cache next to the new DOCX
     try:
@@ -373,7 +374,7 @@ def rebuild_offer_from_section(
     # Rebuild Excel when section2 was updated
     if section_key == "section2":
         try:
-            xlsx_path = build_cost_excel(project, sections["section2"], language=language)
+            xlsx_path = build_cost_excel(project, sections["section2"], language=language, output_dir=docx_path.parent)
             result["xlsx"] = str(xlsx_path)
         except Exception as _e:
             logger.warning("Excel rebuild failed: %s", _e)

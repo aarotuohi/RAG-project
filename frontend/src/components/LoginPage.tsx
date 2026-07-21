@@ -1,18 +1,35 @@
-import { useMsal } from '@azure/msal-react'
-import { LOGIN_REQUEST } from '../authConfig'
+import { useState, FormEvent } from 'react'
+import { useAuth } from '../auth/AuthContext'
 
 export default function LoginPage() {
-  const { instance } = useMsal()
+  const { login } = useAuth()
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError]       = useState<string | null>(null)
+  const [loading, setLoading]   = useState(false)
 
-  const handleLogin = () => {
-    instance
-      .loginPopup(LOGIN_REQUEST)
-      .catch(err => {
-        // Popup closed by user — not a real error
-        if (err?.errorCode !== 'user_cancelled') {
-          console.error('[MSAL] Login failed:', err)
-        }
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
       })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setError(body.detail ?? 'Login failed')
+        return
+      }
+      const data = await res.json()
+      login(data.access_token, data.username, data.is_admin)
+    } catch {
+      setError('Network error — please try again')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -40,49 +57,79 @@ export default function LoginPage() {
           boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          gap: 20,
+          alignItems: 'stretch',
+          gap: 16,
           minWidth: 320,
+          width: 360,
         }}
       >
-        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#111827' }}>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#111827', textAlign: 'center' }}>
           Sign in to AISALES
         </h2>
-        <p style={{ margin: 0, color: '#6b7280', fontSize: 14, textAlign: 'center' }}>
-          Use your Microsoft or Outlook account to continue.
-        </p>
-        <button
-          onClick={handleLogin}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            padding: '10px 24px',
-            borderRadius: 8,
-            border: '1px solid #d1d5db',
-            background: '#fff',
-            cursor: 'pointer',
-            fontSize: 15,
-            fontWeight: 600,
-            color: '#111827',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-          }}
-        >
-          <MicrosoftIcon />
-          Sign in with Microsoft
-        </button>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>Username</label>
+            <input
+              type="text"
+              autoComplete="username"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              required
+              style={{
+                padding: '8px 12px',
+                borderRadius: 6,
+                border: '1px solid #d1d5db',
+                fontSize: 14,
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>Password</label>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              style={{
+                padding: '8px 12px',
+                borderRadius: 6,
+                border: '1px solid #d1d5db',
+                fontSize: 14,
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          {error && (
+            <p style={{ margin: 0, color: '#dc2626', fontSize: 13, textAlign: 'center' }}>
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              marginTop: 4,
+              padding: '10px 0',
+              borderRadius: 8,
+              border: 'none',
+              background: loading ? '#9ca3af' : '#2563eb',
+              color: '#fff',
+              fontSize: 15,
+              fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {loading ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
       </div>
     </div>
   )
 }
 
-function MicrosoftIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
-      <rect x="1"  y="1"  width="9" height="9" fill="#F25022" />
-      <rect x="11" y="1"  width="9" height="9" fill="#7FBA00" />
-      <rect x="1"  y="11" width="9" height="9" fill="#00A4EF" />
-      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
-    </svg>
-  )
-}
